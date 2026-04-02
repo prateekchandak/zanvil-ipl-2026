@@ -355,7 +355,17 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#00FF88","#FFD700","#00D4FF","#FF6B35","#9D4EDD","#3A86FF","#FB5607"];
+const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const DASHES=[
+  {borderDash:[],label:"solid"},
+  {borderDash:[5,5],label:"dashed"},
+  {borderDash:[2,4],label:"dotted"},
+  {borderDash:[8,3],label:"long-dash"},
+  {borderDash:[3,3,6,3],label:"dash-dot"},
+  {borderDash:[1,2],label:"tiny-dot"},
+  {borderDash:[10,2],label:"thick-dash"},
+  {borderDash:[4,4,2,4],label:"pattern"}
+];
 let chart=null;
 const vis={};D.standings.forEach(s=>{vis[s.name]=true;});
 
@@ -433,7 +443,7 @@ function renderAll(){
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
   const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:CC[i],backgroundColor:CC[i]+"10",borderWidth:2.5,
+    borderColor:CC[i],backgroundColor:CC[i]+"10",borderWidth:2.5,borderDash:DASHES[i].borderDash,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
     pointBackgroundColor:CC[i],pointBorderColor:"#14171F",pointBorderWidth:2,
     pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
@@ -441,8 +451,9 @@ function renderAll(){
   chart=new Chart(ctx,{type:"line",data:{labels:D.matchPts.labels.slice(),datasets:ds},
     options:{responsive:true,maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
-      plugins:{legend:{display:true,position:"top",labels:{color:"#8b92a5",font:{family:"'Inter Tight'",size:12,weight:"600"},
-        padding:12,usePointStyle:true,pointStyle:"circle",boxWidth:8}},
+      plugins:{legend:{display:true,position:"top",labels:{color:"#8b92a5",font:{family:"'Inter Tight'",size:11,weight:"600"},
+        padding:12,usePointStyle:false,generateLabels:ctx=>{
+          return ctx.data.datasets.map((d,i)=>({text:d.label+" ("+DASHES[i].label+")",fillStyle:CC[i],strokeStyle:CC[i],lineWidth:2,lineDash:DASHES[i].borderDash,hidden:!vis[d.label]}))}}},
         tooltip:{backgroundColor:"#1a1e28",borderColor:"#252a38",borderWidth:1,
           titleFont:{family:"'Inter Tight',sans-serif",size:12,weight:"800"},
           bodyFont:{family:"'Inter Tight',sans-serif",size:13},
