@@ -451,9 +451,7 @@ function renderAll(){
   chart=new Chart(ctx,{type:"line",data:{labels:D.matchPts.labels.slice(),datasets:ds},
     options:{responsive:true,maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
-      plugins:{legend:{display:true,position:"top",labels:{color:"#8b92a5",font:{family:"'Inter Tight'",size:11,weight:"600"},
-        padding:12,usePointStyle:false,generateLabels:ctx=>{
-          return ctx.data.datasets.map((d,i)=>({text:d.label+" ("+DASHES[i].label+")",fillStyle:CC[i],strokeStyle:CC[i],lineWidth:2,lineDash:DASHES[i].borderDash,hidden:!vis[d.label]}))}}},
+      plugins:{legend:{display:false},
         tooltip:{backgroundColor:"#1a1e28",borderColor:"#252a38",borderWidth:1,
           titleFont:{family:"'Inter Tight',sans-serif",size:12,weight:"800"},
           bodyFont:{family:"'Inter Tight',sans-serif",size:13},
