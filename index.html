@@ -438,12 +438,34 @@ function renderAll(){
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
   const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:CC[i],backgroundColor:CC[i]+"10",borderWidth:2.5,borderDash:DASHES[i].borderDash,
+    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:CC[i],pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
     pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+
+  // Plugin to render team names on chart
+  const namePlugin={
+    afterDatasetsDraw(chart){
+      const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      D.standings.forEach((s,i)=>{
+        const ds=chart.data.datasets[i];
+        const meta=chart.getDatasetMeta(i);
+        if(!meta.hidden&&ds.data.length>0){
+          const lastIdx=ds.data.length-1;
+          const lastPt=meta.data[lastIdx];
+          if(lastPt){
+            c.fillStyle="#FF1919";c.font="bold 12px 'Inter Tight'";
+            c.textAlign="left";c.textBaseline="middle";
+            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
+          }
+        }
+      });
+    }
+  };
+
   if(chart)chart.destroy();
   chart=new Chart(ctx,{type:"line",data:{labels:D.matchPts.labels.slice(),datasets:ds},
+    plugins:[namePlugin],
     options:{responsive:true,maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
       plugins:{legend:{display:false},
@@ -505,4 +527,3 @@ window.addEventListener("DOMContentLoaded",()=>{initShapes();renderAll();});
 <footer>ZANVIL <span>IPL</span> 2026</footer>
 </body>
 </html>
-<!-- Updated Wed Apr  1 21:27:04 CDT 2026 -->
