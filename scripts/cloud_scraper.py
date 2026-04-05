@@ -17,56 +17,62 @@ EMAIL      = os.environ.get("IPL_EMAIL", "prateekchandak10@gmail.com")
 HTML_FILE  = Path(__file__).parent.parent / "index.html"
 HIST_FILE  = Path(__file__).parent / "history.json"
 
-# ── Gmail OTP reader ──────────────────────────────────────────────────
-def get_otp_from_gmail(max_wait=60):
-    """Read the latest OTP from Gmail using Google API."""
-    from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
+# ── Gmail OTP reader (via IMAP - no Google Cloud needed) ─────────────
+def get_otp_from_gmail(max_wait=90):
+    """Read the latest OTP from Gmail using IMAP + App Password."""
+    import imaplib
+    import email as emaillib
+    from email.header import decode_header
 
-    creds = Credentials(
-        token=None,
-        refresh_token=os.environ["GMAIL_REFRESH_TOKEN"],
-        client_id=os.environ["GMAIL_CLIENT_ID"],
-        client_secret=os.environ["GMAIL_CLIENT_SECRET"],
-        token_uri="https://oauth2.googleapis.com/token"
-    )
+    imap_user = os.environ.get("IPL_EMAIL", EMAIL)
+    imap_pass = os.environ["GMAIL_APP_PASSWORD"]
 
-    service = build("gmail", "v1", credentials=creds)
     start_time = time.time()
-
     while time.time() - start_time < max_wait:
-        results = service.users().messages().list(
-            userId="me",
-            q="from:noreply subject:OTP newer_than:2m",
-            maxResults=1
-        ).execute()
+        try:
+            mail = imaplib.IMAP4_SSL("imap.gmail.com")
+            mail.login(imap_user, imap_pass)
+            mail.select("inbox")
 
-        messages = results.get("messages", [])
-        if messages:
-            msg = service.users().messages().get(
-                userId="me", id=messages[0]["id"], format="full"
-            ).execute()
+            # Search for recent OTP emails (last 1 day, from My11Circle/IPL)
+            _, msg_ids = mail.search(None, '(UNSEEN NEWER "1" SUBJECT "OTP")')
+            if not msg_ids[0]:
+                # Also try broader search
+                _, msg_ids = mail.search(None, '(UNSEEN NEWER "1" OR SUBJECT "OTP" SUBJECT "verification")')
 
-            # Extract OTP from email body
-            payload = msg.get("payload", {})
-            body = ""
-            if payload.get("body", {}).get("data"):
-                body = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8")
-            else:
-                for part in payload.get("parts", []):
-                    if part.get("mimeType") == "text/plain" and part.get("body", {}).get("data"):
-                        body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
-                        break
-                    elif part.get("mimeType") == "text/html" and part.get("body", {}).get("data"):
-                        body = base64.urlsafe_b64decode(part["body"]["data"]).decode("utf-8")
+            ids = msg_ids[0].split()
+            if ids:
+                # Get the latest email
+                _, msg_data = mail.fetch(ids[-1], "(RFC822)")
+                raw = msg_data[0][1]
+                msg = emaillib.message_from_bytes(raw)
 
-            # Find 4-6 digit OTP in body
-            import re as _re
-            otp_match = _re.search(r'\b(\d{4,6})\b', body)
-            if otp_match:
-                otp = otp_match.group(1)
-                print(f"[GMAIL] Found OTP: {'*' * (len(otp)-2)}{otp[-2:]}")
-                return otp
+                # Extract body
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        ct = part.get_content_type()
+                        if ct in ("text/plain", "text/html"):
+                            try:
+                                body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
+                                if body:
+                                    break
+                            except:
+                                pass
+                else:
+                    body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
+
+                # Find 4-6 digit OTP
+                otp_match = re.search(r'\b(\d{4,6})\b', body)
+                if otp_match:
+                    otp = otp_match.group(1)
+                    print(f"[GMAIL] Found OTP: {'*' * (len(otp)-2)}{otp[-2:]}")
+                    mail.logout()
+                    return otp
+
+            mail.logout()
+        except Exception as e:
+            print(f"[GMAIL] IMAP error: {e}")
 
         print(f"[GMAIL] Waiting for OTP email... ({int(time.time()-start_time)}s)")
         time.sleep(5)
