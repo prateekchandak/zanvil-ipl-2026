@@ -1,37 +1,42 @@
 """
 cloud_scraper.py
 ----------------
-Runs in GitHub Actions. Uses Playwright to log in to IPL Fantasy
-(with OTP from Gmail API), scrape standings, and update index.html.
+Runs in GitHub Actions. Uses direct API calls to authenticate with
+IPL Fantasy (email OTP via Gmail IMAP) and fetch league standings.
+No browser needed.
 """
 
-import json, re, time, os, sys, base64
+import json, re, time, os, sys
+import requests
 from datetime import datetime
 from pathlib import Path
 
 # ── Config ────────────────────────────────────────────────────────────
 LEAGUE_ID  = "10310104"
-LEAGUE_URL = f"https://fantasy.iplt20.com/classic/league/view/{LEAGUE_ID}"
-LOGIN_URL  = "https://fantasy.iplt20.com/classic/home"
+BASE_URL   = "https://fantasy.iplt20.com"
 EMAIL      = os.environ.get("IPL_EMAIL", "prateekchandak10@gmail.com")
 HTML_FILE  = Path(__file__).parent.parent / "index.html"
 HIST_FILE  = Path(__file__).parent / "history.json"
 
-# ── Gmail OTP reader (via IMAP - no Google Cloud needed) ─────────────
-def get_otp_from_gmail(max_wait=90, submitted_at=None):
+HEADERS = {
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Origin": BASE_URL,
+    "Referer": f"{BASE_URL}/my11c/static/login.html",
+}
+
+
+# ── Gmail OTP reader (via IMAP) ──────────────────────────────────────
+def get_otp_from_gmail(max_wait=120):
     """Read the latest OTP from Gmail using IMAP + App Password.
-    Only considers emails arriving after submitted_at to avoid stale OTPs."""
+    Marks old OTP emails as read first, then waits for a fresh one."""
     import imaplib
     import email as emaillib
-    from email.utils import parsedate_to_datetime
 
     imap_user = os.environ.get("IPL_EMAIL", EMAIL)
     imap_pass = os.environ["GMAIL_APP_PASSWORD"]
 
-    if submitted_at is None:
-        submitted_at = time.time()
-
-    # First, mark all existing OTP emails as read to avoid picking up old ones
+    # Mark all existing OTP emails as read
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(imap_user, imap_pass)
@@ -52,19 +57,16 @@ def get_otp_from_gmail(max_wait=90, submitted_at=None):
             mail.login(imap_user, imap_pass)
             mail.select("inbox")
 
-            # Only search for UNSEEN OTP emails (we marked old ones as read above)
             _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
             if not msg_ids[0]:
                 _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "verification")')
 
             ids = msg_ids[0].split()
             if ids:
-                # Get the latest email
                 _, msg_data = mail.fetch(ids[-1], "(RFC822)")
                 raw = msg_data[0][1]
                 msg = emaillib.message_from_bytes(raw)
 
-                # Extract body
                 body = ""
                 if msg.is_multipart():
                     for part in msg.walk():
@@ -79,12 +81,10 @@ def get_otp_from_gmail(max_wait=90, submitted_at=None):
                 else:
                     body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-                # Find 4-6 digit OTP
                 otp_match = re.search(r'\b(\d{4,6})\b', body)
                 if otp_match:
                     otp = otp_match.group(1)
                     print(f"[GMAIL] Found OTP: {'*' * (len(otp)-2)}{otp[-2:]}")
-                    # Mark as read
                     mail.store(ids[-1], '+FLAGS', '\\Seen')
                     mail.logout()
                     return otp
@@ -99,124 +99,118 @@ def get_otp_from_gmail(max_wait=90, submitted_at=None):
     raise RuntimeError("Timed out waiting for OTP email")
 
 
-# ── Playwright login + scrape ─────────────────────────────────────────
+# ── API-based login + scrape ─────────────────────────────────────────
 def scrape():
-    from playwright.sync_api import sync_playwright
+    session = requests.Session()
+    session.headers.update(HEADERS)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+    # Step 1: Send OTP to email
+    print(f"[LOGIN] Sending OTP to {EMAIL[:3]}***")
+    resp = session.post(
+        f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/sendEmail",
+        json={"email": EMAIL}
+    )
+    print(f"[LOGIN] sendEmail response: {resp.status_code}")
+    send_data = resp.json()
+    print(f"[LOGIN] sendEmail result: success={send_data.get('success')}, msg={send_data.get('errorMessage', send_data.get('message', 'ok'))}")
+
+    if not send_data.get("success", True) and send_data.get("errorCode") not in (None, 200):
+        # If sendEmail fails, try alternate endpoint
+        print("[LOGIN] Trying alternate login endpoint...")
+        resp = session.post(
+            f"{BASE_URL}/my11c/api/fl/auth/v3/getOtp",
+            json={"Mobile": EMAIL, "loginid": EMAIL}
         )
-        page = context.new_page()
+        print(f"[LOGIN] getOtp response: {resp.status_code} - {resp.text[:200]}")
+        send_data = resp.json()
 
-        # ── Login flow ────────────────────────────────────────────
-        print("[LOGIN] Navigating to login page...")
-        page.goto(LOGIN_URL, wait_until="networkidle", timeout=30000)
-        time.sleep(3)
+    # Extract session token if present
+    session_token = send_data.get("data", {}).get("Session") if isinstance(send_data.get("data"), dict) else None
+    print(f"[LOGIN] Session token: {'found' if session_token else 'not in response'}")
 
-        # ── Login flow ────────────────────────────────────────────
-        print(f"[LOGIN] Page title: {page.title()}")
-        print(f"[LOGIN] Page URL: {page.url}")
+    # Step 2: Get OTP from Gmail
+    print("[LOGIN] Waiting for OTP email...")
+    time.sleep(10)  # Give time for email delivery
+    otp = get_otp_from_gmail(max_wait=120)
 
-        # Check if login is needed by looking for email input
-        needs_login = page.query_selector("#email_input") is not None
-        if not needs_login:
-            print("[LOGIN] Already authenticated!")
-        else:
-            print(f"[LOGIN] On login page, entering email: {EMAIL[:3]}***")
+    # Step 3: Verify OTP
+    print(f"[LOGIN] Verifying OTP...")
+    verify_payload = {"email": EMAIL, "otp": otp}
+    if session_token:
+        verify_payload["Session"] = session_token
 
-            # Mark old OTP emails as read BEFORE triggering new OTP
-            submitted_at = time.time()
+    resp = session.post(
+        f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
+        json=verify_payload
+    )
+    print(f"[LOGIN] verifyOtp response: {resp.status_code}")
+    verify_data = resp.json()
+    print(f"[LOGIN] verifyOtp result: success={verify_data.get('success')}")
 
-            # Enter email
-            page.fill("#email_input", EMAIL)
-            time.sleep(1)
-            page.click("#registerCTA")
-            print("[LOGIN] Email submitted, waiting for OTP...")
-            time.sleep(10)  # Give more time for OTP email to arrive
+    if not verify_data.get("success"):
+        # Try alternate verify endpoint
+        print(f"[LOGIN] Verify failed: {verify_data.get('errorMessage', 'unknown')}")
+        print(f"[LOGIN] Full response: {json.dumps(verify_data)[:500]}")
 
-            # Get OTP from Gmail (only new unread ones)
-            otp = get_otp_from_gmail(max_wait=120, submitted_at=submitted_at)
-            print("[LOGIN] Entering OTP...")
+        # Try v3 authenticate
+        resp = session.post(
+            f"{BASE_URL}/my11c/api/fl/auth/v3/authenticate",
+            json={"Mobile": EMAIL, "loginid": EMAIL, "otp": otp}
+        )
+        print(f"[LOGIN] v3 authenticate: {resp.status_code} - {resp.text[:300]}")
+        verify_data = resp.json()
 
-            # Wait for OTP field to appear
-            page.wait_for_selector("#otpInputField", timeout=10000)
-            page.fill("#otpInputField", otp)
-            time.sleep(1)
-            page.click("#verifyOtp")
-            print("[LOGIN] OTP submitted, waiting for login...")
-            page.wait_for_load_state("networkidle", timeout=30000)
-            time.sleep(5)
+    # Extract auth info
+    auth_data = verify_data.get("data", {})
+    if isinstance(auth_data, dict):
+        uid = auth_data.get("uid") or auth_data.get("userId")
+        token = auth_data.get("authToken") or auth_data.get("token")
+        if uid:
+            session.cookies.set("my11c-uid", uid, domain="fantasy.iplt20.com")
+        if token:
+            session.cookies.set("my11c-authToken", token, domain="fantasy.iplt20.com")
+        print(f"[LOGIN] Auth: uid={'found' if uid else 'missing'}, token={'found' if token else 'missing'}")
 
-            # Check if login succeeded
-            print(f"[LOGIN] Post-OTP URL: {page.url}")
-            print(f"[LOGIN] Post-OTP title: {page.title()}")
+    # Also check if cookies were set via Set-Cookie header
+    print(f"[LOGIN] Cookies: {[c.name for c in session.cookies]}")
 
-            # Sometimes need to wait for redirect
-            for i in range(3):
-                if page.query_selector("#email_input") is None:
-                    break
-                print(f"[LOGIN] Still on login page, waiting... ({i+1})")
-                time.sleep(3)
+    # Step 4: Get gameday from public API
+    print("[SCRAPE] Getting gameday info...")
+    resp = session.get(f"{BASE_URL}/classic/api/live/mixapi?lang=en")
+    mix = resp.json()
+    gd = 0
+    t1, t2 = "?", "?"
+    if mix.get("Data", {}).get("Value"):
+        gd = mix["Data"]["Value"].get("GamedayId", 0)
+        fixtures = mix["Data"]["Value"].get("LiveFixture", [])
+        if fixtures:
+            t1 = fixtures[0].get("HomeTeamShortName", "?")
+            t2 = fixtures[0].get("AwayTeamShortName", "?")
+    print(f"[SCRAPE] Gameday: {gd}, Next: {t1} vs {t2}")
 
-        # ── Navigate to league ────────────────────────────────────
-        print("[SCRAPE] Navigating to league page...")
-        page.goto(LEAGUE_URL, wait_until="networkidle", timeout=30000)
-        time.sleep(8)
+    # Step 5: Get leaderboard
+    print("[SCRAPE] Fetching leaderboard...")
+    lb_url = (
+        f"{BASE_URL}/classic/api/user/leagues/live/{LEAGUE_ID}/leaderboard"
+        f"?optType=1&gamedayId={gd}&phaseId=1&pageNo=1&topNo=500"
+        f"&pageChunk=500&pageOneChunk=500&minCount=8&leagueId={LEAGUE_ID}"
+    )
+    resp = session.get(lb_url)
+    lb = resp.json()
+    print(f"[SCRAPE] Leaderboard response: success={lb.get('Meta', {}).get('Success')}, msg={lb.get('Meta', {}).get('Message', '')}")
 
-        print(f"[SCRAPE] League page title: {page.title()}")
-        print(f"[SCRAPE] League page URL: {page.url}")
+    if not lb.get("Meta", {}).get("Success"):
+        print(f"[SCRAPE] Leaderboard failed: {json.dumps(lb.get('Meta', {}))}")
+        raise RuntimeError(f"Leaderboard API failed: {lb.get('Meta', {}).get('Message', 'unknown')}")
 
-        # Check if still on login page
-        if page.query_selector("#email_input") is not None:
-            raise RuntimeError("Login failed - still on login page after OTP")
+    standings = []
+    for e in lb.get("Data", {}).get("Value", []):
+        standings.append({"rank": e["rank"], "name": e["temname"], "pts": e["points"]})
 
-        # ── Call API from browser context ─────────────────────────
-        print("[SCRAPE] Calling leaderboard API...")
-        result = page.evaluate("""() => {
-            var xhr = new XMLHttpRequest();
-            xhr.open('GET', '/classic/api/live/mixapi?lang=en', false);
-            xhr.send();
-            var mix = JSON.parse(xhr.responseText);
-            var gd = mix.Data && mix.Data.Value ? mix.Data.Value.GamedayId : 0;
-
-            xhr.open('GET', '/classic/api/user/leagues/live/""" + LEAGUE_ID + """/leaderboard?optType=1&gamedayId=' + gd + '&phaseId=1&pageNo=1&topNo=500&pageChunk=500&pageOneChunk=500&minCount=8&leagueId=""" + LEAGUE_ID + """', false);
-            xhr.send();
-            var lb = JSON.parse(xhr.responseText);
-
-            var standings = [];
-            if (lb.Data && lb.Data.Value) {
-                for (var i = 0; i < lb.Data.Value.length; i++) {
-                    var e = lb.Data.Value[i];
-                    standings.push({rank: e.rank, name: e.temname, pts: e.points});
-                }
-            }
-            var fixtures = (mix.Data && mix.Data.Value) ? (mix.Data.Value.LiveFixture || []) : [];
-            var f = fixtures[0] || {};
-            return {
-                standings: standings,
-                gameday: gd,
-                t1: f.HomeTeamShortName || '?',
-                t2: f.AwayTeamShortName || '?',
-                success: lb.Meta && lb.Meta.Success
-            };
-        }""")
-
-        browser.close()
-
-        if not result or not result.get("standings"):
-            raise RuntimeError(f"API returned no data: {result}")
-
-        standings = sorted(result["standings"], key=lambda x: x["rank"])
-        next_match = {
-            "no": result.get("gameday", 0),
-            "teams": [result.get("t1", "?"), result.get("t2", "?")],
-            "time": ""
-        }
-        print(f"[SCRAPE] Got {len(standings)} teams (gameday {next_match['no']})")
-        return standings, next_match
+    standings = sorted(standings, key=lambda x: x["rank"])
+    next_match = {"no": gd, "teams": [t1, t2], "time": ""}
+    print(f"[SCRAPE] Got {len(standings)} teams")
+    return standings, next_match
 
 
 # ── Update HTML ───────────────────────────────────────────────────────
