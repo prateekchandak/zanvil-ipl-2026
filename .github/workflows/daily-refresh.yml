@@ -1,0 +1,41 @@
+name: Daily IPL Dashboard Refresh
+
+on:
+  schedule:
+    # 7:30 AM CST = 13:30 UTC
+    - cron: '30 13 * * *'
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install -r scripts/requirements.txt
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: Run cloud scraper
+        env:
+          IPL_EMAIL: ${{ secrets.IPL_EMAIL }}
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+        run: python scripts/cloud_scraper.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html scripts/history.json
+          git diff --staged --quiet || git commit -m "Daily refresh: $(date -u '+%d %b %Y')"
+          git push
