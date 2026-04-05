@@ -34,12 +34,12 @@ def get_otp_from_gmail(max_wait=90):
             mail.login(imap_user, imap_pass)
             mail.select("inbox")
 
-            # Search for recent OTP emails
-            import datetime as dt
-            since = (dt.datetime.utcnow() - dt.timedelta(minutes=3)).strftime("%d-%b-%Y")
-            _, msg_ids = mail.search(None, f'(UNSEEN SINCE {since} SUBJECT "OTP")')
+            # Search for recent OTP emails using Gmail X-GM-RAW extension
+            _, msg_ids = mail.search(None, 'X-GM-RAW', '"subject:OTP newer_than:3m"')
             if not msg_ids[0]:
-                _, msg_ids = mail.search(None, f'(UNSEEN SINCE {since})')
+                _, msg_ids = mail.search(None, 'X-GM-RAW', '"subject:verification newer_than:3m"')
+            if not msg_ids[0]:
+                _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
 
             ids = msg_ids[0].split()
             if ids:
