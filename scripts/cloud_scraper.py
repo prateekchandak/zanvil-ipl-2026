@@ -18,14 +18,32 @@ HTML_FILE  = Path(__file__).parent.parent / "index.html"
 HIST_FILE  = Path(__file__).parent / "history.json"
 
 # ── Gmail OTP reader (via IMAP - no Google Cloud needed) ─────────────
-def get_otp_from_gmail(max_wait=90):
-    """Read the latest OTP from Gmail using IMAP + App Password."""
+def get_otp_from_gmail(max_wait=90, submitted_at=None):
+    """Read the latest OTP from Gmail using IMAP + App Password.
+    Only considers emails arriving after submitted_at to avoid stale OTPs."""
     import imaplib
     import email as emaillib
-    from email.header import decode_header
+    from email.utils import parsedate_to_datetime
 
     imap_user = os.environ.get("IPL_EMAIL", EMAIL)
     imap_pass = os.environ["GMAIL_APP_PASSWORD"]
+
+    if submitted_at is None:
+        submitted_at = time.time()
+
+    # First, mark all existing OTP emails as read to avoid picking up old ones
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(imap_user, imap_pass)
+        mail.select("inbox")
+        _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
+        if msg_ids[0]:
+            for mid in msg_ids[0].split():
+                mail.store(mid, '+FLAGS', '\\Seen')
+            print(f"[GMAIL] Marked {len(msg_ids[0].split())} old OTP emails as read")
+        mail.logout()
+    except Exception as e:
+        print(f"[GMAIL] Could not clear old OTPs: {e}")
 
     start_time = time.time()
     while time.time() - start_time < max_wait:
@@ -34,12 +52,10 @@ def get_otp_from_gmail(max_wait=90):
             mail.login(imap_user, imap_pass)
             mail.select("inbox")
 
-            # Search for recent OTP emails using Gmail X-GM-RAW extension
-            _, msg_ids = mail.search(None, 'X-GM-RAW', '"subject:OTP newer_than:3m"')
+            # Only search for UNSEEN OTP emails (we marked old ones as read above)
+            _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
             if not msg_ids[0]:
-                _, msg_ids = mail.search(None, 'X-GM-RAW', '"subject:verification newer_than:3m"')
-            if not msg_ids[0]:
-                _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
+                _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "verification")')
 
             ids = msg_ids[0].split()
             if ids:
@@ -68,6 +84,8 @@ def get_otp_from_gmail(max_wait=90):
                 if otp_match:
                     otp = otp_match.group(1)
                     print(f"[GMAIL] Found OTP: {'*' * (len(otp)-2)}{otp[-2:]}")
+                    # Mark as read
+                    mail.store(ids[-1], '+FLAGS', '\\Seen')
                     mail.logout()
                     return otp
 
@@ -98,36 +116,61 @@ def scrape():
         page.goto(LOGIN_URL, wait_until="networkidle", timeout=30000)
         time.sleep(3)
 
-        # Check if already logged in (unlikely in fresh browser)
-        if "league" in page.url or "home" in page.url:
-            title = page.title()
-            if "Login" not in title:
-                print("[LOGIN] Already authenticated!")
-            else:
-                print(f"[LOGIN] On login page, entering email: {EMAIL[:3]}***")
-                # Enter email
-                page.fill("#email_input", EMAIL)
-                time.sleep(1)
-                page.click("#registerCTA")
-                print("[LOGIN] Email submitted, waiting for OTP...")
-                time.sleep(5)
+        # ── Login flow ────────────────────────────────────────────
+        print(f"[LOGIN] Page title: {page.title()}")
+        print(f"[LOGIN] Page URL: {page.url}")
 
-                # Get OTP from Gmail
-                otp = get_otp_from_gmail(max_wait=90)
-                print("[LOGIN] Entering OTP...")
-                page.fill("#otpInputField", otp)
-                time.sleep(1)
-                page.click("#verifyOtp")
-                print("[LOGIN] OTP submitted, waiting for login...")
-                page.wait_for_load_state("networkidle", timeout=30000)
-                time.sleep(5)
+        # Check if login is needed by looking for email input
+        needs_login = page.query_selector("#email_input") is not None
+        if not needs_login:
+            print("[LOGIN] Already authenticated!")
+        else:
+            print(f"[LOGIN] On login page, entering email: {EMAIL[:3]}***")
+
+            # Mark old OTP emails as read BEFORE triggering new OTP
+            submitted_at = time.time()
+
+            # Enter email
+            page.fill("#email_input", EMAIL)
+            time.sleep(1)
+            page.click("#registerCTA")
+            print("[LOGIN] Email submitted, waiting for OTP...")
+            time.sleep(10)  # Give more time for OTP email to arrive
+
+            # Get OTP from Gmail (only new unread ones)
+            otp = get_otp_from_gmail(max_wait=120, submitted_at=submitted_at)
+            print("[LOGIN] Entering OTP...")
+
+            # Wait for OTP field to appear
+            page.wait_for_selector("#otpInputField", timeout=10000)
+            page.fill("#otpInputField", otp)
+            time.sleep(1)
+            page.click("#verifyOtp")
+            print("[LOGIN] OTP submitted, waiting for login...")
+            page.wait_for_load_state("networkidle", timeout=30000)
+            time.sleep(5)
+
+            # Check if login succeeded
+            print(f"[LOGIN] Post-OTP URL: {page.url}")
+            print(f"[LOGIN] Post-OTP title: {page.title()}")
+
+            # Sometimes need to wait for redirect
+            for i in range(3):
+                if page.query_selector("#email_input") is None:
+                    break
+                print(f"[LOGIN] Still on login page, waiting... ({i+1})")
+                time.sleep(3)
 
         # ── Navigate to league ────────────────────────────────────
         print("[SCRAPE] Navigating to league page...")
         page.goto(LEAGUE_URL, wait_until="networkidle", timeout=30000)
         time.sleep(8)
 
-        if "Login" in page.title():
+        print(f"[SCRAPE] League page title: {page.title()}")
+        print(f"[SCRAPE] League page URL: {page.url}")
+
+        # Check if still on login page
+        if page.query_selector("#email_input") is not None:
             raise RuntimeError("Login failed - still on login page after OTP")
 
         # ── Call API from browser context ─────────────────────────
