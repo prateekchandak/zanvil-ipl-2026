@@ -43,9 +43,12 @@ def get_otp_from_gmail(max_wait=120):
             mail.login(imap_user, imap_pass)
             mail.select("inbox")
 
+            # Search for any unread email with OTP/verification/code in subject
             _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
             if not msg_ids[0]:
                 _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "verification")')
+            if not msg_ids[0]:
+                _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "code")')
 
             ids = msg_ids[0].split()
             if ids:
@@ -90,21 +93,26 @@ def scrape():
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    # Step 0: Mark old OTP emails as read BEFORE triggering new one
-    print("[LOGIN] Clearing old OTP emails...")
+    # Step 0: Mark ALL recent unread emails as read to avoid stale OTPs
+    print("[LOGIN] Clearing old OTP/verification emails...")
     import imaplib
     try:
         mail = imaplib.IMAP4_SSL("imap.gmail.com")
         mail.login(os.environ.get("IPL_EMAIL", EMAIL), os.environ["GMAIL_APP_PASSWORD"])
         mail.select("inbox")
-        _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
-        if msg_ids[0]:
-            for mid in msg_ids[0].split():
-                mail.store(mid, '+FLAGS', '\\Seen')
-            print(f"[LOGIN] Marked {len(msg_ids[0].split())} old OTP emails as read")
+        total_marked = 0
+        for search in ['(UNSEEN SUBJECT "OTP")', '(UNSEEN SUBJECT "verification")',
+                       '(UNSEEN SUBJECT "code")', '(UNSEEN SUBJECT "confirm")']:
+            _, msg_ids = mail.search(None, search)
+            if msg_ids[0]:
+                for mid in msg_ids[0].split():
+                    mail.store(mid, '+FLAGS', '\\Seen')
+                total_marked += len(msg_ids[0].split())
+        if total_marked:
+            print(f"[LOGIN] Marked {total_marked} old emails as read")
         mail.logout()
     except Exception as e:
-        print(f"[LOGIN] Could not clear old OTPs: {e}")
+        print(f"[LOGIN] Could not clear old emails: {e}")
 
     # Step 1: Send OTP to email
     print(f"[LOGIN] Sending OTP to {EMAIL[:3]}***")
@@ -137,45 +145,43 @@ def scrape():
     print(f"[LOGIN] Session token: {'found' if session_token else 'not found'}")
 
     # Step 2: Wait for OTP email and retrieve it
-    print("[LOGIN] Waiting for OTP email...")
-    time.sleep(15)  # Give time for email delivery
+    print("[LOGIN] Waiting for OTP email (20s for delivery)...")
+    time.sleep(20)  # Must wait for NEW email to arrive
     otp = get_otp_from_gmail(max_wait=120)
 
-    # Step 3: Verify OTP - try multiple approaches
-    print(f"[LOGIN] Verifying OTP...")
+    # Step 3: Verify OTP with Cognito session
+    print(f"[LOGIN] Verifying OTP with session...")
 
-    # Approach A: verifyEmailOtp with Session
-    verify_payload = {"email": EMAIL, "otp": otp}
-    if session_token:
-        verify_payload["Session"] = session_token
+    # The Cognito verifyEmailOtp needs: email, otp (called "answer"), Session
+    # Try different field name variations
+    payloads_to_try = [
+        {"email": EMAIL, "answer": otp, "Session": session_token},
+        {"email": EMAIL, "otp": otp, "Session": session_token},
+        {"email": EMAIL, "answer": otp, "session": session_token},
+        {"Username": EMAIL, "ConfirmationCode": otp, "Session": session_token},
+    ]
 
-    resp = session.post(
-        f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
-        json=verify_payload
-    )
-    print(f"[LOGIN] verifyEmailOtp: {resp.status_code} - {resp.text[:500]}")
-    verify_data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-
-    # Check cookies after verify
-    print(f"[LOGIN] Cookies after verify: {[(c.name, c.value[:20]+'...') for c in session.cookies]}")
-
-    if not verify_data.get("success") and not session.cookies.get("my11c-authToken"):
-        # Approach B: v3 authenticate
-        print("[LOGIN] Trying v3 authenticate...")
+    verify_data = {}
+    for i, payload in enumerate(payloads_to_try):
+        # Remove None values
+        payload = {k: v for k, v in payload.items() if v is not None}
         resp = session.post(
-            f"{BASE_URL}/my11c/api/fl/auth/v3/authenticate",
-            json={"Mobile": EMAIL, "otp": otp, "loginid": EMAIL}
+            f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
+            json=payload
         )
-        print(f"[LOGIN] v3 auth: {resp.status_code} - {resp.text[:500]}")
+        print(f"[LOGIN] verify attempt {i+1}: {resp.status_code} - {resp.text[:300]}")
 
-    if not session.cookies.get("my11c-authToken"):
-        # Approach C: tokenize authenticate
-        print("[LOGIN] Trying tokenize authenticate...")
-        resp = session.post(
-            f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/authenticate",
-            json={"Mobile": EMAIL, "otp": otp}
-        )
-        print(f"[LOGIN] tokenize auth: {resp.status_code} - {resp.text[:500]}")
+        # Check if cookies were set
+        if session.cookies.get("my11c-authToken"):
+            print("[LOGIN] Got auth cookie!")
+            break
+
+        try:
+            verify_data = resp.json()
+            if verify_data.get("success"):
+                break
+        except:
+            pass
 
     # Extract auth from response data if cookies weren't set
     if not session.cookies.get("my11c-authToken"):
