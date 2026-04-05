@@ -28,27 +28,13 @@ HEADERS = {
 
 # ── Gmail OTP reader (via IMAP) ──────────────────────────────────────
 def get_otp_from_gmail(max_wait=120):
-    """Read the latest OTP from Gmail using IMAP + App Password.
-    Marks old OTP emails as read first, then waits for a fresh one."""
+    """Read the latest UNSEEN OTP from Gmail using IMAP + App Password.
+    Old OTP emails should be marked as read before calling this."""
     import imaplib
     import email as emaillib
 
     imap_user = os.environ.get("IPL_EMAIL", EMAIL)
     imap_pass = os.environ["GMAIL_APP_PASSWORD"]
-
-    # Mark all existing OTP emails as read
-    try:
-        mail = imaplib.IMAP4_SSL("imap.gmail.com")
-        mail.login(imap_user, imap_pass)
-        mail.select("inbox")
-        _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
-        if msg_ids[0]:
-            for mid in msg_ids[0].split():
-                mail.store(mid, '+FLAGS', '\\Seen')
-            print(f"[GMAIL] Marked {len(msg_ids[0].split())} old OTP emails as read")
-        mail.logout()
-    except Exception as e:
-        print(f"[GMAIL] Could not clear old OTPs: {e}")
 
     start_time = time.time()
     while time.time() - start_time < max_wait:
@@ -104,37 +90,61 @@ def scrape():
     session = requests.Session()
     session.headers.update(HEADERS)
 
+    # Step 0: Mark old OTP emails as read BEFORE triggering new one
+    print("[LOGIN] Clearing old OTP emails...")
+    import imaplib
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(os.environ.get("IPL_EMAIL", EMAIL), os.environ["GMAIL_APP_PASSWORD"])
+        mail.select("inbox")
+        _, msg_ids = mail.search(None, '(UNSEEN SUBJECT "OTP")')
+        if msg_ids[0]:
+            for mid in msg_ids[0].split():
+                mail.store(mid, '+FLAGS', '\\Seen')
+            print(f"[LOGIN] Marked {len(msg_ids[0].split())} old OTP emails as read")
+        mail.logout()
+    except Exception as e:
+        print(f"[LOGIN] Could not clear old OTPs: {e}")
+
     # Step 1: Send OTP to email
     print(f"[LOGIN] Sending OTP to {EMAIL[:3]}***")
     resp = session.post(
         f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/sendEmail",
         json={"email": EMAIL}
     )
-    print(f"[LOGIN] sendEmail response: {resp.status_code}")
-    send_data = resp.json()
-    print(f"[LOGIN] sendEmail result: success={send_data.get('success')}, msg={send_data.get('errorMessage', send_data.get('message', 'ok'))}")
+    print(f"[LOGIN] sendEmail status: {resp.status_code}")
+    print(f"[LOGIN] sendEmail headers: {dict(resp.headers)}")
+    raw_text = resp.text
+    print(f"[LOGIN] sendEmail body: {raw_text[:500]}")
 
-    if not send_data.get("success", True) and send_data.get("errorCode") not in (None, 200):
-        # If sendEmail fails, try alternate endpoint
-        print("[LOGIN] Trying alternate login endpoint...")
-        resp = session.post(
-            f"{BASE_URL}/my11c/api/fl/auth/v3/getOtp",
-            json={"Mobile": EMAIL, "loginid": EMAIL}
-        )
-        print(f"[LOGIN] getOtp response: {resp.status_code} - {resp.text[:200]}")
+    # Try to parse as JSON
+    try:
         send_data = resp.json()
+    except:
+        send_data = {}
 
-    # Extract session token if present
-    session_token = send_data.get("data", {}).get("Session") if isinstance(send_data.get("data"), dict) else None
-    print(f"[LOGIN] Session token: {'found' if session_token else 'not in response'}")
+    # Extract session token - could be at various paths
+    session_token = None
+    if isinstance(send_data, dict):
+        session_token = send_data.get("Session")
+        if not session_token and isinstance(send_data.get("data"), dict):
+            session_token = send_data["data"].get("Session")
+        if not session_token:
+            # Check all string values for session-like tokens
+            for k, v in send_data.items():
+                if isinstance(v, str) and len(v) > 50:
+                    print(f"[LOGIN] Potential session in field '{k}': {v[:30]}...")
+    print(f"[LOGIN] Session token: {'found' if session_token else 'not found'}")
 
-    # Step 2: Get OTP from Gmail
+    # Step 2: Wait for OTP email and retrieve it
     print("[LOGIN] Waiting for OTP email...")
-    time.sleep(10)  # Give time for email delivery
+    time.sleep(15)  # Give time for email delivery
     otp = get_otp_from_gmail(max_wait=120)
 
-    # Step 3: Verify OTP
+    # Step 3: Verify OTP - try multiple approaches
     print(f"[LOGIN] Verifying OTP...")
+
+    # Approach A: verifyEmailOtp with Session
     verify_payload = {"email": EMAIL, "otp": otp}
     if session_token:
         verify_payload["Session"] = session_token
@@ -143,36 +153,46 @@ def scrape():
         f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
         json=verify_payload
     )
-    print(f"[LOGIN] verifyOtp response: {resp.status_code}")
-    verify_data = resp.json()
-    print(f"[LOGIN] verifyOtp result: success={verify_data.get('success')}")
+    print(f"[LOGIN] verifyEmailOtp: {resp.status_code} - {resp.text[:500]}")
+    verify_data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
 
-    if not verify_data.get("success"):
-        # Try alternate verify endpoint
-        print(f"[LOGIN] Verify failed: {verify_data.get('errorMessage', 'unknown')}")
-        print(f"[LOGIN] Full response: {json.dumps(verify_data)[:500]}")
+    # Check cookies after verify
+    print(f"[LOGIN] Cookies after verify: {[(c.name, c.value[:20]+'...') for c in session.cookies]}")
 
-        # Try v3 authenticate
+    if not verify_data.get("success") and not session.cookies.get("my11c-authToken"):
+        # Approach B: v3 authenticate
+        print("[LOGIN] Trying v3 authenticate...")
         resp = session.post(
             f"{BASE_URL}/my11c/api/fl/auth/v3/authenticate",
-            json={"Mobile": EMAIL, "loginid": EMAIL, "otp": otp}
+            json={"Mobile": EMAIL, "otp": otp, "loginid": EMAIL}
         )
-        print(f"[LOGIN] v3 authenticate: {resp.status_code} - {resp.text[:300]}")
-        verify_data = resp.json()
+        print(f"[LOGIN] v3 auth: {resp.status_code} - {resp.text[:500]}")
 
-    # Extract auth info
-    auth_data = verify_data.get("data", {})
-    if isinstance(auth_data, dict):
-        uid = auth_data.get("uid") or auth_data.get("userId")
-        token = auth_data.get("authToken") or auth_data.get("token")
-        if uid:
-            session.cookies.set("my11c-uid", uid, domain="fantasy.iplt20.com")
-        if token:
-            session.cookies.set("my11c-authToken", token, domain="fantasy.iplt20.com")
-        print(f"[LOGIN] Auth: uid={'found' if uid else 'missing'}, token={'found' if token else 'missing'}")
+    if not session.cookies.get("my11c-authToken"):
+        # Approach C: tokenize authenticate
+        print("[LOGIN] Trying tokenize authenticate...")
+        resp = session.post(
+            f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/authenticate",
+            json={"Mobile": EMAIL, "otp": otp}
+        )
+        print(f"[LOGIN] tokenize auth: {resp.status_code} - {resp.text[:500]}")
 
-    # Also check if cookies were set via Set-Cookie header
-    print(f"[LOGIN] Cookies: {[c.name for c in session.cookies]}")
+    # Extract auth from response data if cookies weren't set
+    if not session.cookies.get("my11c-authToken"):
+        try:
+            auth_data = resp.json().get("data", {})
+            if isinstance(auth_data, dict):
+                uid = auth_data.get("uid") or auth_data.get("userId")
+                token = auth_data.get("authToken") or auth_data.get("token") or auth_data.get("AccessToken")
+                if uid:
+                    session.cookies.set("my11c-uid", str(uid), domain="fantasy.iplt20.com")
+                if token:
+                    session.cookies.set("my11c-authToken", str(token), domain="fantasy.iplt20.com")
+                print(f"[LOGIN] Manual auth: uid={'found' if uid else 'missing'}, token={'found' if token else 'missing'}")
+        except:
+            pass
+
+    print(f"[LOGIN] Final cookies: {[c.name for c in session.cookies]}")
 
     # Step 4: Get gameday from public API
     print("[SCRAPE] Getting gameday info...")
