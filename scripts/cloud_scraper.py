@@ -34,11 +34,12 @@ def get_otp_from_gmail(max_wait=90):
             mail.login(imap_user, imap_pass)
             mail.select("inbox")
 
-            # Search for recent OTP emails (last 1 day, from My11Circle/IPL)
-            _, msg_ids = mail.search(None, '(UNSEEN NEWER "1" SUBJECT "OTP")')
+            # Search for recent OTP emails
+            import datetime as dt
+            since = (dt.datetime.utcnow() - dt.timedelta(minutes=3)).strftime("%d-%b-%Y")
+            _, msg_ids = mail.search(None, f'(UNSEEN SINCE {since} SUBJECT "OTP")')
             if not msg_ids[0]:
-                # Also try broader search
-                _, msg_ids = mail.search(None, '(UNSEEN NEWER "1" OR SUBJECT "OTP" SUBJECT "verification")')
+                _, msg_ids = mail.search(None, f'(UNSEEN SINCE {since})')
 
             ids = msg_ids[0].split()
             if ids:
