@@ -200,19 +200,55 @@ def scrape():
 
     print(f"[LOGIN] Final cookies: {[c.name for c in session.cookies]}")
 
-    # Step 4: Get gameday from public API
+    # Step 4: Get gameday from mixapi, next match from tour-fixtures
     print("[SCRAPE] Getting gameday info...")
     resp = session.get(f"{BASE_URL}/classic/api/live/mixapi?lang=en")
     mix = resp.json()
     gd = 0
-    t1, t2 = "?", "?"
     if mix.get("Data", {}).get("Value"):
         gd = mix["Data"]["Value"].get("GamedayId", 0)
-        fixtures = mix["Data"]["Value"].get("LiveFixture", [])
-        if fixtures:
-            t1 = fixtures[0].get("HomeTeamShortName", "?")
-            t2 = fixtures[0].get("AwayTeamShortName", "?")
-    print(f"[SCRAPE] Gameday: {gd}, Next: {t1} vs {t2}")
+
+    # Get next upcoming match from tour-fixtures (future MatchdateTime)
+    t1, t2, match_no = "?", "?", gd
+    try:
+        fix_resp = session.get(f"{BASE_URL}/classic/api/feed/tour-fixtures?lang=en")
+        fix_data = fix_resp.json()
+        fix_list = (fix_data.get("Data") or {}).get("Value") or {}
+        if isinstance(fix_list, dict):
+            fix_list = fix_list.get("Fixtures") or fix_list.get("fixtures") or []
+        elif not isinstance(fix_list, list):
+            fix_list = []
+
+        now_ts = datetime.utcnow().timestamp()
+
+        def _parse_ts(fx):
+            mdt = fx.get("MatchdateTime", "") or fx.get("Matchdate", "")
+            if not mdt:
+                return 0
+            for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(mdt[:19], fmt).timestamp()
+                except ValueError:
+                    pass
+            return 0
+
+        future = [fx for fx in fix_list
+                  if isinstance(fx, dict) and fx.get("HomeTeamShortName") and _parse_ts(fx) > now_ts]
+        if future:
+            future.sort(key=_parse_ts)
+            f = future[0]
+        else:
+            # fallback: first unlocked
+            f = next((fx for fx in fix_list
+                      if isinstance(fx, dict) and fx.get("IsLocked") == 0 and fx.get("HomeTeamShortName")), {})
+        if f:
+            t1 = f.get("HomeTeamShortName", "?")
+            t2 = f.get("AwayTeamShortName", "?")
+            match_no = f.get("Gameday") or gd
+    except Exception as e:
+        print(f"[SCRAPE] tour-fixtures failed: {e}")
+
+    print(f"[SCRAPE] Gameday: {gd}, Next: {t1} vs {t2} (Match {match_no})")
 
     # Step 5: Get leaderboard
     print("[SCRAPE] Fetching leaderboard...")
@@ -234,7 +270,7 @@ def scrape():
         standings.append({"rank": e["rank"], "name": e["temname"], "pts": e["points"]})
 
     standings = sorted(standings, key=lambda x: x["rank"])
-    next_match = {"no": gd, "teams": [t1, t2], "time": ""}
+    next_match = {"no": match_no, "teams": [t1, t2], "time": ""}
     print(f"[SCRAPE] Got {len(standings)} teams")
     return standings, next_match
 
