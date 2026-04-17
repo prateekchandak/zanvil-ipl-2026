@@ -459,9 +459,6 @@ function renderAll(){
   document.getElementById("t1f").textContent=m.t1full;
   document.getElementById("t2").textContent=m.t2;
   document.getElementById("t2f").textContent=m.t2full;
-  var mt=m.time;
-  try{var d=new Date(mt);if(!isNaN(d))mt=d.toLocaleDateString("en-IN",{day:"numeric",month:"short"})+", "+d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true});}catch(e){}
-  document.getElementById("mtime").textContent=mt;
 
   // Leaderboard
   const maxP=Math.max(...D.standings.map(s=>s.pts));
@@ -489,7 +486,7 @@ function renderAll(){
     // Games in hand
     let gih=0;
     const gihPlayers=[];
-    if(maxM>0){players.forEach(p=>{if(p.iplTeam){const rem=maxM-(itm[p.iplTeam]||0);if(rem>0){gih+=rem;gihPlayers.push(p);}}});}
+    if(maxM>0){players.forEach(p=>{if(p.iplTeam){const rem=maxM-(itm[p.iplTeam]||0);if(rem>0){const mult=p.isC?2:p.isVC?1.5:1;gih+=rem*mult;gihPlayers.push(p);}}});}
     const gihId=`gih-expand-${s.name.replace(/\s+/g,'-')}`;
     const gihHtml=maxM>0?`<div class="pxi-gih" onclick="toggleGih('${gihId}')" title="Click to see players">${gih} GiH</div>`:"";
     // GiH expanded player cards
@@ -498,13 +495,16 @@ function renderAll(){
       const cards=gihPlayers.map(p=>{
         const bg=tc(p.iplTeam),tx=tt(p.iplTeam);
         const rem=maxM-(itm[p.iplTeam]||0);
+        const mult=p.isC?2:p.isVC?1.5:1;
+        const wt=rem*mult;
+        const cap=p.isC?" (C)":p.isVC?" (VC)":"";
         const sn=p.name.split(" ").map((w,i)=>i===0?w[0]+".":w).join(" ");
-        return`<div class="pxi-player" title="${p.name} (${p.iplTeam}) — ${rem} game${rem>1?'s':''} in hand">
+        return`<div class="pxi-player" title="${p.name} (${p.iplTeam})${cap} — ${wt} weighted GiH">
           <div class="pxi-avatar" style="border-color:${bg}">
             <img src="${imgUrl(p.name)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
             <div class="ini" style="background:${bg};display:none">${ini(p.name)}</div>
-          </div><div class="pxi-pname">${sn}</div>
-          <div class="pxi-chip" style="background:${bg};color:${tx}">${p.iplTeam} +${rem}</div></div>`;
+          </div><div class="pxi-pname">${sn}${cap}</div>
+          <div class="pxi-chip" style="background:${bg};color:${tx}">${p.iplTeam} +${wt}</div></div>`;
       }).join("");
       gihExpand=`<div class="pxi-gih-expand" id="${gihId}" style="display:none;"><div class="pxi-players">${cards}</div></div>`;
     }
@@ -727,7 +727,7 @@ window.addEventListener("DOMContentLoaded",()=>{initShapes();renderAll();initAna
     <div class="match-meta"><div class="label">Upcoming</div><div class="num" id="mnum">Match 5</div></div>
     <div class="match-vs">
       <div class="match-team"><div class="abbr" id="t1">LSG</div><div class="full" id="t1f"></div></div>
-      <div><div class="match-dot">vs</div><div class="match-time" id="mtime"></div></div>
+      <div><div class="match-dot">vs</div></div>
       <div class="match-team"><div class="abbr" id="t2">DC</div><div class="full" id="t2f"></div></div>
     </div>
   </div>
