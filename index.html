@@ -102,7 +102,10 @@ body{font-family:'Inter Tight',-apple-system,'Segoe UI',sans-serif;font-weight:4
 .pxi-item:hover{background:rgba(255,255,255,.02);}
 .pxi-left{display:flex;align-items:center;gap:12px;width:170px;flex-shrink:0;}
 .pxi-name{font-size:14px;font-weight:700;color:#fff;}
-.pxi-pts{font-size:11px;color:var(--text3);font-weight:500;}
+.pxi-pts{font-size:11px;color:var(--text3);font-weight:500;display:flex;align-items:center;gap:8px;}
+.pxi-gih{font-size:9px;font-weight:700;color:#ffd93d;background:rgba(255,217,61,.12);padding:2px 6px;border-radius:4px;letter-spacing:.3px;cursor:pointer;transition:background .2s;}
+.pxi-gih:hover{background:rgba(255,217,61,.25);}
+.pxi-gih-expand{padding:6px 12px 12px 60px;}
 .pxi-players{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
 .pxi-player{display:flex;flex-direction:column;align-items:center;gap:4px;
   transition:all .3s;cursor:default;}
@@ -201,7 +204,13 @@ const D = {
     perMatch: {},
     cumulative: {"nobrains11": [626.0, 716.0, 739.0, 966.0, 966.0, 976.0, 1080.0, 1320.0, 1320.0, 1623.0, 1623.0, 1716.5, 2287.0, 2287.0, 2577.0, 2582.0, 2765.5, 2784.5], "CYANIDE10": [493.0, 655.5, 665.5, 860.5, 860.5, 865.5, 1022.0, 1168.0, 1168.0, 1826.5, 1826.5, 1971.5, 2638.0, 2638.0, 2653.0, 2649.0, 2892.0, 2892.0], "ReddyIsReady": [622.5, 624.5, 624.5, 954.5, 1009.5, 1019.5, 1019.5, 1133.5, 1133.5, 1313.5, 1313.5, 1435.5, 1973.0, 1973.0, 2133.0, 2220.0, 2358.0, 2402.0], "gupsxi": [510.5, 594.5, 594.5, 914.5, 1030.5, 1030.5, 1082.5, 1153.5, 1153.5, 1464.5, 1464.5, 1582.5, 2229.0, 2229.0, 2536.0, 2626.0, 2626.0, 2649.0], "Papa FanKings": [332.5, 571.5, 599.5, 752.5, 879.5, 884.5, 1015.5, 1236.5, 1236.5, 1709.0, 1709.0, 1831.0, 2414.0, 2414.0, 2414.0, 2449.0, 2660.0, 2773.0], "BHAGGU": [566.0, 566.0, 566.0, 753.5, 765.5, 765.5, 765.5, 905.0, 905.0, 1006.0, 1006.0, 1128.0, 1696.0, 1696.0, 1938.5, 2017.5, 2155.5, 2337.5], "McDuke": [404.5, 480.5, 538.5, 719.5, 842.5, 847.5, 1020.5, 1221.5, 1221.5, 1678.0, 1678.0, 1821.0, 2425.0, 2425.0, 2748.0, 2915.0, 2935.0, 2935.0], "AJIPLWINNERS": [255.0, 351.0, 390.0, 656.0, 708.0, 749.0, 947.0, 971.0, 971.0, 1211.5, 1211.5, 1273.5, 2030.0, 2030.0, 2083.0, 2178.0, 2178.0, 2199.0], "LaudyaNaBhojyam": [null, null, null, null, null, null, null, null, null, 87.0, 87.0, 219.0, 520.0, 520.0, 822.0, 865.0, 958.0, 960.0]}
   },
+  playerScores: {},
+  playerTeams: {},
+  playerIplTeams: {},
+  iplTeamMatches: {"RCB": 5, "SRH": 5, "MI": 5, "KKR": 5, "RR": 5, "CSK": 5, "PBKS": 5, "GT": 4, "LSG": 5, "DC": 4},
   teams:{
+
+
 
 
 
@@ -366,6 +375,7 @@ function tc(t){return TC[t]||"#444";}
 function tt(t){return TT[t]||"#fff";}
 function ini(n){const p=n.split(" ").filter(Boolean);return p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():n.slice(0,2).toUpperCase();}
 function imgUrl(n){return`https://scores.iplt20.com/ipl/playerimages/${encodeURIComponent(n)}.png`;}
+function toggleGih(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==="none"?"block":"none";}
 
 // ── Floating shapes (Utopia-style) ──
 function initShapes(){
@@ -436,7 +446,9 @@ function renderAll(){
   document.getElementById("t1f").textContent=m.t1full;
   document.getElementById("t2").textContent=m.t2;
   document.getElementById("t2f").textContent=m.t2full;
-  document.getElementById("mtime").textContent=m.time;
+  var mt=m.time;
+  try{var d=new Date(mt);if(!isNaN(d))mt=d.toLocaleDateString("en-IN",{day:"numeric",month:"short"})+", "+d.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true});}catch(e){}
+  document.getElementById("mtime").textContent=mt;
 
   // Leaderboard
   const maxP=Math.max(...D.standings.map(s=>s.pts));
@@ -453,12 +465,36 @@ function renderAll(){
 
   // Playing XI
   const pxi=document.getElementById("pxi");
+  const itm=D.iplTeamMatches||{};
+  const maxM=Object.keys(itm).length?Math.max(...Object.values(itm)):0;
   let html=`<div class="pxi-head"><span style="width:170px">Manager</span>
     <span class="today">Playing Today - Match ${m.no}: ${m.t1} vs ${m.t2}</span></div>`;
   D.standings.forEach(s=>{
     const players=D.teams[s.name]||[];
     const playing=players.filter(p=>D.todayTeams.includes(p.iplTeam));
     const rc=s.rank===1?"r1":s.rank===2?"r2":s.rank===3?"r3":"rn";
+    // Games in hand
+    let gih=0;
+    const gihPlayers=[];
+    if(maxM>0){players.forEach(p=>{if(p.iplTeam){const rem=maxM-(itm[p.iplTeam]||0);if(rem>0){gih+=rem;gihPlayers.push(p);}}});}
+    const gihId=`gih-expand-${s.name.replace(/\s+/g,'-')}`;
+    const gihHtml=maxM>0?`<div class="pxi-gih" onclick="toggleGih('${gihId}')" title="Click to see players">${gih} GiH</div>`:"";
+    // GiH expanded player cards
+    let gihExpand="";
+    if(gihPlayers.length){
+      const cards=gihPlayers.map(p=>{
+        const bg=tc(p.iplTeam),tx=tt(p.iplTeam);
+        const rem=maxM-(itm[p.iplTeam]||0);
+        const sn=p.name.split(" ").map((w,i)=>i===0?w[0]+".":w).join(" ");
+        return`<div class="pxi-player" title="${p.name} (${p.iplTeam}) — ${rem} game${rem>1?'s':''} in hand">
+          <div class="pxi-avatar" style="border-color:${bg}">
+            <img src="${imgUrl(p.name)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
+            <div class="ini" style="background:${bg};display:none">${ini(p.name)}</div>
+          </div><div class="pxi-pname">${sn}</div>
+          <div class="pxi-chip" style="background:${bg};color:${tx}">${p.iplTeam} +${rem}</div></div>`;
+      }).join("");
+      gihExpand=`<div class="pxi-gih-expand" id="${gihId}" style="display:none;"><div class="pxi-players">${cards}</div></div>`;
+    }
     let ph="";
     if(!playing.length)ph=`<span class="pxi-none">No players in today's match</span>`;
     else ph=playing.map(p=>{
@@ -474,8 +510,8 @@ function renderAll(){
     }).join("");
     html+=`<div class="pxi-item"><div class="pxi-left">
       <div class="lb-rank ${rc}" style="width:32px;height:32px;font-size:12px;border-radius:8px">${s.rank}</div>
-      <div><div class="pxi-name">${s.name}</div><div class="pxi-pts">${s.pts} pts</div></div>
-    </div><div class="pxi-players">${ph}</div></div>`;
+      <div><div class="pxi-name">${s.name}</div>${gihHtml}</div>
+    </div><div class="pxi-players">${ph}</div></div>${gihExpand}`;
   });
   pxi.innerHTML=html;
 
@@ -730,7 +766,71 @@ window.addEventListener("DOMContentLoaded",()=>{initShapes();renderAll();initAna
     </div>
   </div>
 </div>
+
+<div class="section" id="gih-section" style="display:none;">
+  <div class="section-head"><div class="dot"></div><h2>Games in Hand</h2></div>
+  <div id="gih-body"></div>
 </div>
+
+</div>
+
+<script>
+(function(){
+  function buildGamesInHand(){
+    var itm=D.iplTeamMatches||{};
+    var pit=D.playerIplTeams||{};
+    var ptm=D.playerTeams||{};
+    if(!Object.keys(itm).length||!Object.keys(pit).length) return;
+
+    var maxM=Math.max(...Object.values(itm));
+    // Build per-fantasy-team data
+    var teams={};
+    Object.entries(pit).forEach(function([player,iplTeam]){
+      var ft=ptm[player]||"Unknown";
+      if(!teams[ft]) teams[ft]={players:[],total:0};
+      var played=itm[iplTeam]||0;
+      var remaining=maxM-played;
+      teams[ft].players.push({name:player,iplTeam:iplTeam,played:played,remaining:remaining});
+      teams[ft].total+=remaining;
+    });
+
+    // Sort fantasy teams by total remaining desc
+    var sorted=Object.entries(teams).sort(function(a,b){return b[1].total-a[1].total;});
+
+    var html='<div style="color:#888;font-size:12px;margin-bottom:10px;">Max matches played by any IPL team: <span style="color:#FF1919;font-weight:700;">'+maxM+'</span></div>';
+    html+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html+='<thead><tr style="color:#FF1919;border-bottom:1px solid #252a38;">';
+    html+='<th style="text-align:left;padding:6px 10px;">Fantasy Team</th>';
+    html+='<th style="text-align:right;padding:6px 10px;">Games in Hand</th>';
+    html+='<th style="text-align:left;padding:6px 10px;">Player Breakdown</th>';
+    html+='</tr></thead><tbody>';
+
+    sorted.forEach(function([name,data]){
+      // Sort players by remaining desc
+      data.players.sort(function(a,b){return b.remaining-a.remaining;});
+      var breakdown=data.players.map(function(p){
+        var col=p.remaining>0?'#ffd93d':'#555';
+        return '<span style="color:'+col+';white-space:nowrap;">'+p.name+' ('+p.iplTeam+': '+p.remaining+')</span>';
+      }).join(', ');
+      html+='<tr style="border-bottom:1px solid #1a1e28;">';
+      html+='<td style="padding:6px 10px;color:#fff;font-weight:500;">'+name+'</td>';
+      html+='<td style="padding:6px 10px;text-align:right;color:#FF1919;font-weight:700;">'+data.total+'</td>';
+      html+='<td style="padding:6px 10px;color:#aaa;font-size:11px;">'+breakdown+'</td>';
+      html+='</tr>';
+    });
+
+    html+='</tbody></table></div>';
+    document.getElementById("gih-body").innerHTML=html;
+    document.getElementById("gih-section").style.display="block";
+  }
+
+  var _origRenderAll=window.renderAll;
+  window.renderAll=function(){
+    if(_origRenderAll) _origRenderAll();
+    buildGamesInHand();
+  };
+})();
+</script>
 
 <footer>ZANVIL <span>IPL</span> 2026</footer>
 </body>
