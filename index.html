@@ -221,7 +221,8 @@ const TT={CSK:"#000"};
 function tc(t){return TC[t]||"#444";}
 function tt(t){return TT[t]||"#fff";}
 function ini(n){const p=n.split(" ").filter(Boolean);return p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():n.slice(0,2).toUpperCase();}
-function imgUrl(n){return`https://scores.iplt20.com/ipl/playerimages/${encodeURIComponent(n)}.png`;}
+const FULL_NAMES={"S. Samson":"Sanju Samson","I. Kishan":"Ishan Kishan","K. Rahul":"KL Rahul","A. Mhatre":"Angkrish Mhatre","S. Sudharsan":"Sai Sudharsan","V. Sooryavanshi":"Vijaykumar Sooryavanshi","W. Sundar":"Washington Sundar","A. Markram":"Aiden Markram","S. Sharma":"Saurav Sharma","J. Unadkat":"Jaydev Unadkat","M. Shami":"Mohammed Shami","J. Buttler":"Jos Buttler","P. Salt":"Phil Salt","C. Green":"Cameron Green","V. Kohli":"Virat Kohli","Y. Jaiswal":"Yashasvi Jaiswal","S. Gill":"Shubman Gill","A. Sharma":"Abhishek Sharma","P. Yadav":"Prithvi Yadav","J. Duffy":"Jacob Duffy","F. Allen":"Finn Allen","S. Rutherford":"Sherfane Rutherford","H. Pandya":"Hardik Pandya","A. Khan":"Avesh Khan","P. Singh":"Prabhsimran Singh","R. Gaikwad":"Ruturaj Gaikwad","P. Krishna":"Prasidh Krishna","P. Arya":"Priyansh Arya","V. Chakaravarthy":"Varun Chakaravarthy","T. Varma":"Tilak Varma","M. Stoinis":"Marcus Stoinis","K. Tyagi":"Kartik Tyagi","Q. d. Kock":"Quinton de Kock","T. Head":"Travis Head","J. Bethell":"Jacob Bethell","Y. Dayal":"Yash Dayal","A. Patel":"Axar Patel","K. Rabada":"Kagiso Rabada","R. Bishnoi":"Ravi Bishnoi","A. Raghuvanshi":"Anuj Raghuvanshi","J. Bumrah":"Jasprit Bumrah","B. Kumar":"Bhuvneshwar Kumar"};
+function imgUrl(n){var full=FULL_NAMES[n]||n;return`https://scores.iplt20.com/ipl/playerimages/${encodeURIComponent(full)}.png`;}
 function toggleGih(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==="none"?"block":"none";}
 
 // ── Floating shapes (Utopia-style) ──
@@ -614,70 +615,7 @@ window.addEventListener("DOMContentLoaded",()=>{initShapes();renderAll();initAna
   </div>
 </div>
 
-<div class="section" id="gih-section" style="display:none;">
-  <div class="section-head"><div class="dot"></div><h2>Games in Hand</h2></div>
-  <div id="gih-body"></div>
 </div>
-
-</div>
-
-<script>
-(function(){
-  function buildGamesInHand(){
-    var itm=D.iplTeamMatches||{};
-    var pit=D.playerIplTeams||{};
-    var ptm=D.playerTeams||{};
-    if(!Object.keys(itm).length||!Object.keys(pit).length) return;
-
-    var maxM=Math.max(...Object.values(itm));
-    // Build per-fantasy-team data
-    var teams={};
-    Object.entries(pit).forEach(function([player,iplTeam]){
-      var ft=ptm[player]||"Unknown";
-      if(!teams[ft]) teams[ft]={players:[],total:0};
-      var played=itm[iplTeam]||0;
-      var remaining=maxM-played;
-      teams[ft].players.push({name:player,iplTeam:iplTeam,played:played,remaining:remaining});
-      teams[ft].total+=remaining;
-    });
-
-    // Sort fantasy teams by total remaining desc
-    var sorted=Object.entries(teams).sort(function(a,b){return b[1].total-a[1].total;});
-
-    var html='<div style="color:#888;font-size:12px;margin-bottom:10px;">Max matches played by any IPL team: <span style="color:#FF1919;font-weight:700;">'+maxM+'</span></div>';
-    html+='<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html+='<thead><tr style="color:#FF1919;border-bottom:1px solid #252a38;">';
-    html+='<th style="text-align:left;padding:6px 10px;">Fantasy Team</th>';
-    html+='<th style="text-align:right;padding:6px 10px;">Games in Hand</th>';
-    html+='<th style="text-align:left;padding:6px 10px;">Player Breakdown</th>';
-    html+='</tr></thead><tbody>';
-
-    sorted.forEach(function([name,data]){
-      // Sort players by remaining desc
-      data.players.sort(function(a,b){return b.remaining-a.remaining;});
-      var breakdown=data.players.map(function(p){
-        var col=p.remaining>0?'#ffd93d':'#555';
-        return '<span style="color:'+col+';white-space:nowrap;">'+p.name+' ('+p.iplTeam+': '+p.remaining+')</span>';
-      }).join(', ');
-      html+='<tr style="border-bottom:1px solid #1a1e28;">';
-      html+='<td style="padding:6px 10px;color:#fff;font-weight:500;">'+name+'</td>';
-      html+='<td style="padding:6px 10px;text-align:right;color:#FF1919;font-weight:700;">'+data.total+'</td>';
-      html+='<td style="padding:6px 10px;color:#aaa;font-size:11px;">'+breakdown+'</td>';
-      html+='</tr>';
-    });
-
-    html+='</tbody></table></div>';
-    document.getElementById("gih-body").innerHTML=html;
-    document.getElementById("gih-section").style.display="block";
-  }
-
-  var _origRenderAll=window.renderAll;
-  window.renderAll=function(){
-    if(_origRenderAll) _origRenderAll();
-    buildGamesInHand();
-  };
-})();
-</script>
 
 <footer>ZANVIL <span>IPL</span> 2026</footer>
 </body>
