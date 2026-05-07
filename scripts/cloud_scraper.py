@@ -38,6 +38,9 @@ def make_session():
             "IPL_CLASSIC_COOKIE secret is empty. Extract it from a logged-in "
             "browser (cookie name `my11_classic_game` on fantasy.iplt20.com)."
         )
+    # Sanity log so we can spot truncation/whitespace issues without leaking value.
+    print(f"[AUTH] Cookie length={len(cookie_value)}, "
+          f"starts={cookie_value[:6]!r}, ends={cookie_value[-6:]!r}")
 
     s = requests.Session()
     s.headers.update({"User-Agent": USER_AGENT})
