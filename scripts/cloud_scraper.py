@@ -70,10 +70,20 @@ def get_otp_from_gmail(max_wait=120):
                 else:
                     body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
 
-                otp_match = re.search(r'\b(\d{4,6})\b', body)
+                # Strip HTML tags so regex doesn't match attribute values
+                clean_body = re.sub(r'<[^>]+>', ' ', body)
+                # Prefer 6-digit OTPs (standard for IPL Fantasy/My11Circle).
+                # Loose \d{4,6} matches "2026" (the year) in the email footer.
+                otp_match = re.search(r'\b(\d{6})\b', clean_body)
+                if not otp_match:
+                    # Fallback: 4-5 digit with explicit OTP/code context
+                    otp_match = re.search(
+                        r'(?:verification\s+code|OTP|code)[^0-9]{0,20}(\d{4,5})\b',
+                        clean_body, re.IGNORECASE
+                    )
                 if otp_match:
                     otp = otp_match.group(1)
-                    print(f"[GMAIL] Found OTP: {'*' * (len(otp)-2)}{otp[-2:]}")
+                    print(f"[GMAIL] Found OTP: {'*' * (len(otp)-2)}{otp[-2:]} (len={len(otp)})")
                     mail.store(ids[-1], '+FLAGS', '\\Seen')
                     mail.logout()
                     return otp
@@ -150,41 +160,20 @@ def scrape():
     otp = get_otp_from_gmail(max_wait=120)
 
     # Step 3: Verify OTP with Cognito session
+    # Verified via 400-response probing: API requires lowercase "session" + "otp" fields.
+    # Cognito invalidates the session after the FIRST failed attempt, so we only get
+    # one shot — multiple variants would burn the session and force re-sending OTP.
     print(f"[LOGIN] Verifying OTP with session...")
-
-    # The Cognito verifyEmailOtp uses lowercase "session" (verified from prior 400 logs)
-    # and the OTP field is EMAIL_OTP_CODE (Cognito CUSTOM_CHALLENGE convention).
-    # Keep legacy variants as fallbacks in case the API surface changes.
-    payloads_to_try = [
-        {"email": EMAIL, "EMAIL_OTP_CODE": otp, "session": session_token},
-        {"email": EMAIL, "answer": otp, "session": session_token},
-        {"email": EMAIL, "otp": otp, "session": session_token},
-        {"email": EMAIL, "EMAIL_OTP_CODE": otp, "Session": session_token},
-        {"email": EMAIL, "answer": otp, "Session": session_token},
-        {"Username": EMAIL, "ConfirmationCode": otp, "Session": session_token},
-    ]
-
-    verify_data = {}
-    for i, payload in enumerate(payloads_to_try):
-        # Remove None values
-        payload = {k: v for k, v in payload.items() if v is not None}
-        resp = session.post(
-            f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
-            json=payload
-        )
-        print(f"[LOGIN] verify attempt {i+1}: {resp.status_code} - {resp.text[:300]}")
-
-        # Check if cookies were set
-        if session.cookies.get("my11c-authToken"):
-            print("[LOGIN] Got auth cookie!")
-            break
-
-        try:
-            verify_data = resp.json()
-            if verify_data.get("success"):
-                break
-        except:
-            pass
+    payload = {"email": EMAIL, "otp": otp, "session": session_token}
+    resp = session.post(
+        f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
+        json=payload
+    )
+    print(f"[LOGIN] verify status: {resp.status_code} - {resp.text[:400]}")
+    try:
+        verify_data = resp.json()
+    except Exception:
+        verify_data = {}
 
     # Extract auth from response data if cookies weren't set
     if not session.cookies.get("my11c-authToken"):
