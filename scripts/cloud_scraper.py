@@ -186,45 +186,22 @@ def scrape():
         v = c.value or ""
         print(f"   {c.name}: domain={c.domain}, path={c.path}, value={v[:25]}...")
 
-    # The /classic/ API checks for a `profile` cookie that the /my11c/ verify
-    # call doesn't set. We need to find which endpoint exchanges my11c auth
-    # into the legacy "profile" cookie. Try several candidates and observe.
-    print("[LOGIN] Bootstrapping classic session — probing endpoints for `profile` cookie...")
-    bootstrap_paths = [
-        "/classic/api/user/profile",
-        "/classic/api/user/me",
-        "/classic/api/user/init",
-        "/classic/api/auth/init",
-        "/classic/api/user/getUser",
-        "/my11c/api/fl/profile",
-        "/my11c/api/fl/me",
-        "/my11c/api/fl/auth/tokenize/v1/external/profile",
-        "/my11c/api/fl/auth/tokenize/v1/external/me",
-        "/my11c/api/fl/auth/tokenize/v1/external/getProfile",
-        "/my11c/api/fl/auth/tokenize/v1/external/getUserCookie",
-        "/my11c/api/fl/auth/tokenize/v1/external/setUserCookie",
-        "/classic/league/view/" + LEAGUE_ID,
-        "/classic/",
-    ]
-    # Use browser-like headers, not the JSON ones from sendEmail
-    browser_headers = {
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "User-Agent": HEADERS["User-Agent"],
-    }
-    for path in bootstrap_paths:
-        try:
-            before = set(c.name for c in session.cookies)
-            r = session.get(f"{BASE_URL}{path}", headers=browser_headers,
-                            allow_redirects=True, timeout=15)
-            after = set(c.name for c in session.cookies)
-            new = after - before
-            marker = " ⭐NEW:" + ",".join(new) if new else ""
-            print(f"   {r.status_code} {path} (len={len(r.text)}){marker}")
-            if "profile" in after:
-                print(f"   ✓ profile cookie acquired via {path}")
-                break
-        except Exception as e:
-            print(f"   ERR {path}: {e}")
+    # The /classic/ API needs a `my11_classic_game` cookie (the JS calls this
+    # COOKIE_FANTASY). It's set by POST /classic/api/Session/user/login —
+    # which we found by reading the SPA's main chunk JS.
+    print("[LOGIN] Calling Session/user/login to mint classic session cookie...")
+    before = set(c.name for c in session.cookies)
+    r = session.post(
+        f"{BASE_URL}/classic/api/Session/user/login",
+        headers={"Accept": "application/json", "Content-Type": "application/json",
+                 "User-Agent": HEADERS["User-Agent"]},
+        json={},
+    )
+    after_names = [c.name for c in session.cookies]
+    new = set(after_names) - before
+    print(f"   POST status={r.status_code}, len={len(r.text)}, "
+          f"body[:300]={r.text[:300]!r}, NEW cookies: {sorted(new)}")
+    print(f"   All cookies now: {sorted(after_names)}")
 
     # Step 4: Get gameday from mixapi, next match from tour-fixtures
     print("[SCRAPE] Getting gameday info...")
