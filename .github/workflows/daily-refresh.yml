@@ -30,8 +30,7 @@ jobs:
 
       - name: Run cloud scraper
         env:
-          IPL_EMAIL: ${{ secrets.IPL_EMAIL }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          IPL_CLASSIC_COOKIE: ${{ secrets.IPL_CLASSIC_COOKIE }}
         run: python scripts/cloud_scraper.py
 
       - name: Commit and push

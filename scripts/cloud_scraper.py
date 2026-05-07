@@ -1,12 +1,15 @@
 """
 cloud_scraper.py
 ----------------
-Runs in GitHub Actions. Uses direct API calls to authenticate with
-IPL Fantasy (email OTP via Gmail IMAP) and fetch league standings.
-No browser needed.
+Runs in GitHub Actions. Auths to IPL Fantasy by replaying a long-lived
+`my11_classic_game` cookie (extracted once from a logged-in browser).
+The /classic/ API checks only this cookie for user identity, so we skip
+the whole my11c OTP/Cognito flow.
+
+Refresh the cookie if API auth ever starts failing — it lasts ~9 months.
 """
 
-import json, re, time, os, sys
+import json, os, re
 import requests
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,205 +17,44 @@ from pathlib import Path
 # ── Config ────────────────────────────────────────────────────────────
 LEAGUE_ID  = "10310104"
 BASE_URL   = "https://fantasy.iplt20.com"
-EMAIL      = os.environ.get("IPL_EMAIL", "prateekchandak10@gmail.com")
 HTML_FILE  = Path(__file__).parent.parent / "index.html"
 HIST_FILE  = Path(__file__).parent / "history.json"
 
-HEADERS = {
-    "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Origin": BASE_URL,
-    "Referer": f"{BASE_URL}/my11c/static/login.html",
-}
+USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/146.0.7680.178 Safari/537.36")
 
 
-# ── Gmail OTP reader (via IMAP) ──────────────────────────────────────
-OTP_SENDER = "no_reply@my11circle.com"
+# ── Auth: replay the long-lived classic-game cookie ──────────────────
+def make_session():
+    """Build a requests.Session pre-authed via the IPL_CLASSIC_COOKIE secret.
 
-def _extract_otp_from_body(body):
-    """Extract OTP from email body. My11Circle OTPs are 8 digits."""
-    clean = re.sub(r'<[^>]+>', ' ', body)
-    # Body format: "Dear User, 87156250 is your OTP to register/login..."
-    # Try the contextual pattern first to avoid false positives like the "2026" year.
-    m = re.search(r'(\d{6,10})\s+is your OTP', clean, re.IGNORECASE)
-    if m:
-        return m.group(1)
-    # Fallback: longest digit run of 6-10 digits (excludes the 4-digit year).
-    candidates = re.findall(r'\b\d{6,10}\b', clean)
-    if candidates:
-        # Prefer 8-digit (standard My11Circle OTP)
-        eights = [c for c in candidates if len(c) == 8]
-        return eights[0] if eights else max(candidates, key=len)
-    return None
-
-
-def get_otp_from_gmail(after_ts, max_wait=180):
-    """Wait for an OTP email from My11Circle that arrived AFTER `after_ts` (epoch).
-
-    Filtering by sender + arrival time is more reliable than the UNSEEN flag,
-    which has caching/lag issues against Gmail IMAP.
+    The cookie value is the raw URL-encoded JSON that My11Circle stores in
+    the `my11_classic_game` cookie. Pull it from the env, paste it as-is.
     """
-    import imaplib
-    import email as emaillib
-    from email.utils import parsedate_to_datetime
+    cookie_value = os.environ.get("IPL_CLASSIC_COOKIE", "").strip()
+    if not cookie_value:
+        raise RuntimeError(
+            "IPL_CLASSIC_COOKIE secret is empty. Extract it from a logged-in "
+            "browser (cookie name `my11_classic_game` on fantasy.iplt20.com)."
+        )
 
-    imap_user = os.environ.get("IPL_EMAIL", EMAIL)
-    imap_pass = os.environ["GMAIL_APP_PASSWORD"]
-
-    start_time = time.time()
-    while time.time() - start_time < max_wait:
-        try:
-            mail = imaplib.IMAP4_SSL("imap.gmail.com")
-            mail.login(imap_user, imap_pass)
-            mail.select("inbox")
-
-            # Filter by sender — much more specific than subject.
-            _, msg_ids = mail.search(None, f'(FROM "{OTP_SENDER}")')
-            ids = msg_ids[0].split()
-            # Walk newest → oldest, take the first one newer than after_ts.
-            for mid in reversed(ids[-10:]):  # last 10 is plenty
-                _, msg_data = mail.fetch(mid, "(RFC822)")
-                raw = msg_data[0][1]
-                msg = emaillib.message_from_bytes(raw)
-                try:
-                    msg_ts = parsedate_to_datetime(msg.get("Date")).timestamp()
-                except Exception:
-                    msg_ts = 0
-                if msg_ts < after_ts - 5:  # 5s clock skew tolerance
-                    continue  # too old
-
-                body = ""
-                if msg.is_multipart():
-                    for part in msg.walk():
-                        if part.get_content_type() == "text/plain":
-                            try:
-                                body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                                if body:
-                                    break
-                            except Exception:
-                                pass
-                    if not body:
-                        for part in msg.walk():
-                            if part.get_content_type() == "text/html":
-                                try:
-                                    body = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                                    if body:
-                                        break
-                                except Exception:
-                                    pass
-                else:
-                    body = msg.get_payload(decode=True).decode("utf-8", errors="ignore")
-
-                otp = _extract_otp_from_body(body)
-                if otp:
-                    age = int(time.time() - msg_ts)
-                    print(f"[GMAIL] Found OTP: ***{otp[-2:]} (len={len(otp)}, email age={age}s)")
-                    mail.logout()
-                    return otp
-
-            mail.logout()
-        except Exception as e:
-            print(f"[GMAIL] IMAP error: {e}")
-
-        print(f"[GMAIL] Waiting for OTP email... ({int(time.time()-start_time)}s)")
-        time.sleep(5)
-
-    raise RuntimeError("Timed out waiting for OTP email")
+    s = requests.Session()
+    s.headers.update({"User-Agent": USER_AGENT})
+    s.cookies.set("my11_classic_game", cookie_value,
+                  domain="fantasy.iplt20.com", path="/")
+    return s
 
 
-# ── API-based login + scrape ─────────────────────────────────────────
+# ── Scrape ───────────────────────────────────────────────────────────
 def scrape():
-    session = requests.Session()
-    session.headers.update(HEADERS)
-
-    # Step 1: Send OTP to email. We capture send_ts so the Gmail reader only
-    # accepts emails that arrived AFTER this point (avoids picking up a stale
-    # OTP from a previous run).
-    print(f"[LOGIN] Sending OTP to {EMAIL[:3]}***")
-    send_ts = time.time()
-    resp = session.post(
-        f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/sendEmail",
-        json={"email": EMAIL}
-    )
-    print(f"[LOGIN] sendEmail status: {resp.status_code}")
-    print(f"[LOGIN] sendEmail headers: {dict(resp.headers)}")
-    raw_text = resp.text
-    print(f"[LOGIN] sendEmail body: {raw_text[:500]}")
-
-    # Try to parse as JSON
-    try:
-        send_data = resp.json()
-    except:
-        send_data = {}
-
-    # Extract session token - could be at various paths
-    session_token = None
-    if isinstance(send_data, dict):
-        session_token = send_data.get("Session")
-        if not session_token and isinstance(send_data.get("data"), dict):
-            session_token = send_data["data"].get("Session")
-        if not session_token:
-            # Check all string values for session-like tokens
-            for k, v in send_data.items():
-                if isinstance(v, str) and len(v) > 50:
-                    print(f"[LOGIN] Potential session in field '{k}': {v[:30]}...")
-    print(f"[LOGIN] Session token: {'found' if session_token else 'not found'}")
-
-    # Step 2: Wait for OTP email and retrieve it. The reader filters by
-    # sender + arrival timestamp (after `send_ts`), so we don't need to
-    # pre-mark old emails or sleep up-front.
-    otp = get_otp_from_gmail(after_ts=send_ts, max_wait=180)
-
-    # Step 3: Verify OTP with Cognito session
-    # Verified via 400-response probing: API requires lowercase "session" + "otp" fields.
-    # Cognito invalidates the session after the FIRST failed attempt, so we only get
-    # one shot — multiple variants would burn the session and force re-sending OTP.
-    print(f"[LOGIN] Verifying OTP with session...")
-    payload = {"email": EMAIL, "otp": otp, "session": session_token}
-    resp = session.post(
-        f"{BASE_URL}/my11c/api/fl/auth/tokenize/v1/external/verifyEmailOtp",
-        json=payload
-    )
-    print(f"[LOGIN] verify status: {resp.status_code} - {resp.text[:1000]}")
-    try:
-        verify_data = resp.json()
-    except Exception:
-        verify_data = {}
-
-    # Read what Set-Cookie gave us. The verify response body is just
-    # {"success":true} — auth flows entirely through cookies.
-    print(f"[LOGIN] Cookies after verify:")
-    for c in session.cookies:
-        v = c.value or ""
-        print(f"   {c.name}: domain={c.domain}, path={c.path}, value={v[:25]}...")
-
-    # The /classic/ API needs a `my11_classic_game` cookie (the JS calls this
-    # COOKIE_FANTASY). It's set by POST /classic/api/Session/user/login —
-    # which we found by reading the SPA's main chunk JS.
-    print("[LOGIN] Calling Session/user/login to mint classic session cookie...")
-    before = set(c.name for c in session.cookies)
-    r = session.post(
-        f"{BASE_URL}/classic/api/Session/user/login",
-        headers={"Accept": "application/json", "Content-Type": "application/json",
-                 "User-Agent": HEADERS["User-Agent"]},
-        json={},
-    )
-    after_names = [c.name for c in session.cookies]
-    new = set(after_names) - before
-    print(f"   POST status={r.status_code}, len={len(r.text)}, "
-          f"body[:300]={r.text[:300]!r}, NEW cookies: {sorted(new)}")
-    print(f"   All cookies now: {sorted(after_names)}")
-
-    # Step 4: Get gameday from mixapi, next match from tour-fixtures
+    session = make_session()
     print("[SCRAPE] Getting gameday info...")
     resp = session.get(f"{BASE_URL}/classic/api/live/mixapi?lang=en")
-    print(f"[SCRAPE] mixapi: status={resp.status_code}, "
-          f"ct={resp.headers.get('Content-Type','?')}, "
-          f"len={len(resp.text)}, body[:300]={resp.text[:300]!r}")
     try:
         mix = resp.json()
     except Exception as e:
-        print(f"[SCRAPE] mixapi JSON parse failed: {e}")
+        print(f"[SCRAPE] mixapi JSON parse failed: {e}, body[:200]={resp.text[:200]!r}")
         mix = {}
     gd = 0
     if mix.get("Data", {}).get("Value"):
@@ -267,21 +109,21 @@ def scrape():
         f"?optType=1&gamedayId={gd}&phaseId=1&pageNo=1&topNo=500"
         f"&pageChunk=500&pageOneChunk=500&minCount=8&leagueId={LEAGUE_ID}"
     )
-    # Try with Authorization header in case the API accepts Bearer alongside cookies
-    auth_token = session.cookies.get("my11c-authToken") or ""
-    auth_headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
-    resp = session.get(lb_url, headers=auth_headers)
-    print(f"[SCRAPE] leaderboard: status={resp.status_code}, len={len(resp.text)}")
+    resp = session.get(lb_url)
     try:
         lb = resp.json()
     except Exception as e:
         print(f"[SCRAPE] leaderboard JSON parse failed: {e}, body[:500]={resp.text[:500]!r}")
         raise RuntimeError("Leaderboard returned non-JSON")
-    print(f"[SCRAPE] Leaderboard response: success={lb.get('Meta', {}).get('Success')}, msg={lb.get('Meta', {}).get('Message', '')}")
-
-    if not lb.get("Meta", {}).get("Success"):
-        print(f"[SCRAPE] Leaderboard failed: {json.dumps(lb.get('Meta', {}))}")
-        raise RuntimeError(f"Leaderboard API failed: {lb.get('Meta', {}).get('Message', 'unknown')}")
+    meta = lb.get('Meta', {})
+    if not meta.get("Success"):
+        # Most common cause: the long-lived cookie expired. Refresh
+        # IPL_CLASSIC_COOKIE by re-extracting from a logged-in browser.
+        print(f"[SCRAPE] Leaderboard auth failed: {json.dumps(meta)}")
+        raise RuntimeError(
+            f"Leaderboard API failed: {meta.get('Message', 'unknown')} — "
+            "the IPL_CLASSIC_COOKIE secret may have expired."
+        )
 
     standings = []
     for e in lb.get("Data", {}).get("Value", []):
