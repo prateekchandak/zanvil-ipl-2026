@@ -210,11 +210,13 @@ const D = {{
     else:
         new_data_block = new_data_block.replace("teams: TEAMS_PLACEHOLDER", "teams:{}")
 
+    # Use a lambda so backslash sequences (e.g. \s) inside the JSON payload
+    # aren't misinterpreted as backreferences by re.sub.
     updated = re.sub(
         r'<!-- DATA_START -->.*?<!-- DATA_END -->',
-        new_data_block,
+        lambda _: new_data_block,
         html,
-        flags=re.S
+        flags=re.S,
     )
     HTML_FILE.write_text(updated, encoding="utf-8")
     print(f"[OK] HTML updated: {today_label}")
