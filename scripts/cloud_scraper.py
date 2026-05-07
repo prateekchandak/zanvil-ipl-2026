@@ -186,16 +186,18 @@ def scrape():
         v = c.value or ""
         print(f"   {c.name}: domain={c.domain}, path={c.path}, value={v[:25]}...")
 
-    # Mirror the my11c-* cookies onto path=/ so /classic/api requests pick them up.
-    # (Set-Cookie from /my11c/verifyEmailOtp scopes them to path=/my11c by default.)
-    uid_cookie = session.cookies.get("my11c-uid")
-    tok_cookie = session.cookies.get("my11c-authToken")
-    if uid_cookie:
-        session.cookies.set("my11c-uid", uid_cookie, domain="fantasy.iplt20.com", path="/")
-    if tok_cookie:
-        session.cookies.set("my11c-authToken", tok_cookie, domain="fantasy.iplt20.com", path="/")
-    print(f"[LOGIN] uid={'set' if uid_cookie else 'MISSING'}, "
-          f"token={'set' if tok_cookie else 'MISSING'}")
+    # The /classic/ API expects a legacy "User Cookie" that the /my11c/ flow
+    # doesn't set directly. Loading the classic homepage with my11c-authToken
+    # makes the server exchange it and Set-Cookie the legacy user session.
+    print("[LOGIN] Bootstrapping classic session...")
+    for path in ("/classic/", "/classic/league/view/" + LEAGUE_ID,
+                 "/my11c/api/fl/auth/tokenize/v1/external/getAuthInfo"):
+        try:
+            r = session.get(f"{BASE_URL}{path}", allow_redirects=True)
+            new_cookies = [c.name for c in session.cookies]
+            print(f"   GET {path} -> {r.status_code}, cookies now: {new_cookies}")
+        except Exception as e:
+            print(f"   GET {path} failed: {e}")
 
     # Step 4: Get gameday from mixapi, next match from tour-fixtures
     print("[SCRAPE] Getting gameday info...")
