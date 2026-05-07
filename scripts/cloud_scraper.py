@@ -186,18 +186,45 @@ def scrape():
         v = c.value or ""
         print(f"   {c.name}: domain={c.domain}, path={c.path}, value={v[:25]}...")
 
-    # The /classic/ API expects a legacy "User Cookie" that the /my11c/ flow
-    # doesn't set directly. Loading the classic homepage with my11c-authToken
-    # makes the server exchange it and Set-Cookie the legacy user session.
-    print("[LOGIN] Bootstrapping classic session...")
-    for path in ("/classic/", "/classic/league/view/" + LEAGUE_ID,
-                 "/my11c/api/fl/auth/tokenize/v1/external/getAuthInfo"):
+    # The /classic/ API checks for a `profile` cookie that the /my11c/ verify
+    # call doesn't set. We need to find which endpoint exchanges my11c auth
+    # into the legacy "profile" cookie. Try several candidates and observe.
+    print("[LOGIN] Bootstrapping classic session — probing endpoints for `profile` cookie...")
+    bootstrap_paths = [
+        "/classic/api/user/profile",
+        "/classic/api/user/me",
+        "/classic/api/user/init",
+        "/classic/api/auth/init",
+        "/classic/api/user/getUser",
+        "/my11c/api/fl/profile",
+        "/my11c/api/fl/me",
+        "/my11c/api/fl/auth/tokenize/v1/external/profile",
+        "/my11c/api/fl/auth/tokenize/v1/external/me",
+        "/my11c/api/fl/auth/tokenize/v1/external/getProfile",
+        "/my11c/api/fl/auth/tokenize/v1/external/getUserCookie",
+        "/my11c/api/fl/auth/tokenize/v1/external/setUserCookie",
+        "/classic/league/view/" + LEAGUE_ID,
+        "/classic/",
+    ]
+    # Use browser-like headers, not the JSON ones from sendEmail
+    browser_headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": HEADERS["User-Agent"],
+    }
+    for path in bootstrap_paths:
         try:
-            r = session.get(f"{BASE_URL}{path}", allow_redirects=True)
-            new_cookies = [c.name for c in session.cookies]
-            print(f"   GET {path} -> {r.status_code}, cookies now: {new_cookies}")
+            before = set(c.name for c in session.cookies)
+            r = session.get(f"{BASE_URL}{path}", headers=browser_headers,
+                            allow_redirects=True, timeout=15)
+            after = set(c.name for c in session.cookies)
+            new = after - before
+            marker = " ⭐NEW:" + ",".join(new) if new else ""
+            print(f"   {r.status_code} {path} (len={len(r.text)}){marker}")
+            if "profile" in after:
+                print(f"   ✓ profile cookie acquired via {path}")
+                break
         except Exception as e:
-            print(f"   GET {path} failed: {e}")
+            print(f"   ERR {path}: {e}")
 
     # Step 4: Get gameday from mixapi, next match from tour-fixtures
     print("[SCRAPE] Getting gameday info...")
@@ -263,7 +290,10 @@ def scrape():
         f"?optType=1&gamedayId={gd}&phaseId=1&pageNo=1&topNo=500"
         f"&pageChunk=500&pageOneChunk=500&minCount=8&leagueId={LEAGUE_ID}"
     )
-    resp = session.get(lb_url)
+    # Try with Authorization header in case the API accepts Bearer alongside cookies
+    auth_token = session.cookies.get("my11c-authToken") or ""
+    auth_headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
+    resp = session.get(lb_url, headers=auth_headers)
     print(f"[SCRAPE] leaderboard: status={resp.status_code}, len={len(resp.text)}")
     try:
         lb = resp.json()
