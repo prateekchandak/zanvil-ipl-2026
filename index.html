@@ -1446,18 +1446,30 @@ function renderAll(){
   const namePlugin={
     afterDatasetsDraw(chart){
       const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      const lbs=[];
       D.standings.forEach((s,i)=>{
         const ds=chart.data.datasets[i];
         const meta=chart.getDatasetMeta(i);
         if(!meta.hidden&&ds.data.length>0){
-          const lastIdx=ds.data.length-1;
-          const lastPt=meta.data[lastIdx];
-          if(lastPt){
-            c.fillStyle="#ffffff";c.font="bold 12px 'Inter Tight'";
-            c.textAlign="left";c.textBaseline="middle";
-            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
-          }
+          const lastPt=meta.data[ds.data.length-1];
+          if(lastPt) lbs.push({name:s.name,color:ds.borderColor,dotX:lastPt.x,dotY:lastPt.y,y:lastPt.y});
         }
+      });
+      lbs.sort((a,b)=>a.y-b.y);
+      const gap=20,minY=top+8,maxY=bottom-6;
+      lbs.forEach(l=>{l.y=Math.max(minY,Math.min(maxY,l.y));});
+      for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
+      for(let i=lbs.length-2;i>=0;i--)if(lbs[i+1].y-lbs[i].y<gap)lbs[i].y=lbs[i+1].y-gap;
+      c.font="bold 10px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      lbs.forEach(l=>{
+        const tx=Math.min(l.dotX+14,right-84);
+        const tw=c.measureText(l.name.substring(0,12)).width;
+        if(Math.abs(l.y-l.dotY)>4){
+          c.beginPath();c.moveTo(l.dotX+6,l.dotY);c.lineTo(tx-2,l.y);
+          c.strokeStyle=l.color+"77";c.lineWidth=1;c.stroke();
+        }
+        c.fillStyle="rgba(14,17,26,0.9)";c.fillRect(tx-2,l.y-7,tw+8,14);
+        c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
     }
   };
