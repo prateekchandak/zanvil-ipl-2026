@@ -128,7 +128,7 @@ body{font-family:'Inter Tight',-apple-system,'Segoe UI',sans-serif;font-weight:4
 .pxi-head .today{color:var(--red);}
 
 /* ── CHART ── */
-.chart-area{position:relative;height:480px;margin-top:8px;}
+.chart-area{position:relative;height:520px;margin-top:8px;}
 .filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
 .fbtn{padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;
   border:1px solid var(--border);border-radius:8px;background:transparent;
@@ -406,20 +406,19 @@ function renderAll(){
         }
       });
       lbs.sort((a,b)=>a.y-b.y);
-      const gap=17,minY=top+8,maxY=bottom-6;
+      const gap=20,minY=top+8,maxY=bottom-6;
       lbs.forEach(l=>{l.y=Math.max(minY,Math.min(maxY,l.y));});
       for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
       for(let i=lbs.length-2;i>=0;i--)if(lbs[i+1].y-lbs[i].y<gap)lbs[i].y=lbs[i+1].y-gap;
-      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      c.font="bold 10px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
       lbs.forEach(l=>{
         const tx=Math.min(l.dotX+14,right-84);
         const tw=c.measureText(l.name.substring(0,12)).width;
-        // connector line from dot to label
         if(Math.abs(l.y-l.dotY)>4){
           c.beginPath();c.moveTo(l.dotX+6,l.dotY);c.lineTo(tx-2,l.y);
-          c.strokeStyle=l.color+"88";c.lineWidth=1;c.stroke();
+          c.strokeStyle=l.color+"77";c.lineWidth=1;c.stroke();
         }
-        c.fillStyle="rgba(14,17,26,0.85)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle="rgba(14,17,26,0.9)";c.fillRect(tx-2,l.y-7,tw+8,14);
         c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
@@ -617,20 +616,19 @@ function renderAll(){
         }
       });
       lbs.sort((a,b)=>a.y-b.y);
-      const gap=17,minY=top+8,maxY=bottom-6;
+      const gap=20,minY=top+8,maxY=bottom-6;
       lbs.forEach(l=>{l.y=Math.max(minY,Math.min(maxY,l.y));});
       for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
       for(let i=lbs.length-2;i>=0;i--)if(lbs[i+1].y-lbs[i].y<gap)lbs[i].y=lbs[i+1].y-gap;
-      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      c.font="bold 10px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
       lbs.forEach(l=>{
         const tx=Math.min(l.dotX+14,right-84);
         const tw=c.measureText(l.name.substring(0,12)).width;
-        // connector line from dot to label
         if(Math.abs(l.y-l.dotY)>4){
           c.beginPath();c.moveTo(l.dotX+6,l.dotY);c.lineTo(tx-2,l.y);
-          c.strokeStyle=l.color+"88";c.lineWidth=1;c.stroke();
+          c.strokeStyle=l.color+"77";c.lineWidth=1;c.stroke();
         }
-        c.fillStyle="rgba(14,17,26,0.85)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle="rgba(14,17,26,0.9)";c.fillRect(tx-2,l.y-7,tw+8,14);
         c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
@@ -828,20 +826,19 @@ function renderAll(){
         }
       });
       lbs.sort((a,b)=>a.y-b.y);
-      const gap=17,minY=top+8,maxY=bottom-6;
+      const gap=20,minY=top+8,maxY=bottom-6;
       lbs.forEach(l=>{l.y=Math.max(minY,Math.min(maxY,l.y));});
       for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
       for(let i=lbs.length-2;i>=0;i--)if(lbs[i+1].y-lbs[i].y<gap)lbs[i].y=lbs[i+1].y-gap;
-      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      c.font="bold 10px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
       lbs.forEach(l=>{
         const tx=Math.min(l.dotX+14,right-84);
         const tw=c.measureText(l.name.substring(0,12)).width;
-        // connector line from dot to label
         if(Math.abs(l.y-l.dotY)>4){
           c.beginPath();c.moveTo(l.dotX+6,l.dotY);c.lineTo(tx-2,l.y);
-          c.strokeStyle=l.color+"88";c.lineWidth=1;c.stroke();
+          c.strokeStyle=l.color+"77";c.lineWidth=1;c.stroke();
         }
-        c.fillStyle="rgba(14,17,26,0.85)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle="rgba(14,17,26,0.9)";c.fillRect(tx-2,l.y-7,tw+8,14);
         c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
@@ -1039,20 +1036,19 @@ function renderAll(){
         }
       });
       lbs.sort((a,b)=>a.y-b.y);
-      const gap=17,minY=top+8,maxY=bottom-6;
+      const gap=20,minY=top+8,maxY=bottom-6;
       lbs.forEach(l=>{l.y=Math.max(minY,Math.min(maxY,l.y));});
       for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
       for(let i=lbs.length-2;i>=0;i--)if(lbs[i+1].y-lbs[i].y<gap)lbs[i].y=lbs[i+1].y-gap;
-      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      c.font="bold 10px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
       lbs.forEach(l=>{
         const tx=Math.min(l.dotX+14,right-84);
         const tw=c.measureText(l.name.substring(0,12)).width;
-        // connector line from dot to label
         if(Math.abs(l.y-l.dotY)>4){
           c.beginPath();c.moveTo(l.dotX+6,l.dotY);c.lineTo(tx-2,l.y);
-          c.strokeStyle=l.color+"88";c.lineWidth=1;c.stroke();
+          c.strokeStyle=l.color+"77";c.lineWidth=1;c.stroke();
         }
-        c.fillStyle="rgba(14,17,26,0.85)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle="rgba(14,17,26,0.9)";c.fillRect(tx-2,l.y-7,tw+8,14);
         c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
@@ -1250,20 +1246,19 @@ function renderAll(){
         }
       });
       lbs.sort((a,b)=>a.y-b.y);
-      const gap=17,minY=top+8,maxY=bottom-6;
+      const gap=20,minY=top+8,maxY=bottom-6;
       lbs.forEach(l=>{l.y=Math.max(minY,Math.min(maxY,l.y));});
       for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
       for(let i=lbs.length-2;i>=0;i--)if(lbs[i+1].y-lbs[i].y<gap)lbs[i].y=lbs[i+1].y-gap;
-      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      c.font="bold 10px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
       lbs.forEach(l=>{
         const tx=Math.min(l.dotX+14,right-84);
         const tw=c.measureText(l.name.substring(0,12)).width;
-        // connector line from dot to label
         if(Math.abs(l.y-l.dotY)>4){
           c.beginPath();c.moveTo(l.dotX+6,l.dotY);c.lineTo(tx-2,l.y);
-          c.strokeStyle=l.color+"88";c.lineWidth=1;c.stroke();
+          c.strokeStyle=l.color+"77";c.lineWidth=1;c.stroke();
         }
-        c.fillStyle="rgba(14,17,26,0.85)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle="rgba(14,17,26,0.9)";c.fillRect(tx-2,l.y-7,tw+8,14);
         c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
