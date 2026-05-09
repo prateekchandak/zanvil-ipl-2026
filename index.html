@@ -128,7 +128,7 @@ body{font-family:'Inter Tight',-apple-system,'Segoe UI',sans-serif;font-weight:4
 .pxi-head .today{color:var(--red);}
 
 /* ── CHART ── */
-.chart-area{position:relative;height:380px;margin-top:8px;}
+.chart-area{position:relative;height:480px;margin-top:8px;}
 .filters{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
 .fbtn{padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;
   border:1px solid var(--border);border-radius:8px;background:transparent;
@@ -273,7 +273,7 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const CC=["#FF6B6B","#4ECDC4","#FFD93D","#6BCB77","#4D96FF","#FF9FF3","#FFA447","#C77DFF","#45B7D1","#F06595"];
 const DASHES=[
   {borderDash:[],label:"solid"},
   {borderDash:[5,5],label:"dashed"},
@@ -386,28 +386,35 @@ function renderAll(){
 
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
-  const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
+  const ds=D.standings.map((s,i)=>{const col=CC[i%CC.length];return{label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
+    borderColor:col,backgroundColor:col+"22",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
-    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+    pointBackgroundColor:col,pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2};});
 
   // Plugin to render team names on chart
   const namePlugin={
     afterDatasetsDraw(chart){
       const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      const lbs=[];
       D.standings.forEach((s,i)=>{
         const ds=chart.data.datasets[i];
         const meta=chart.getDatasetMeta(i);
         if(!meta.hidden&&ds.data.length>0){
-          const lastIdx=ds.data.length-1;
-          const lastPt=meta.data[lastIdx];
-          if(lastPt){
-            c.fillStyle="#ffffff";c.font="bold 12px 'Inter Tight'";
-            c.textAlign="left";c.textBaseline="middle";
-            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
-          }
+          const lastPt=meta.data[ds.data.length-1];
+          if(lastPt) lbs.push({name:s.name,color:ds.borderColor,x:lastPt.x,y:lastPt.y});
         }
+      });
+      lbs.sort((a,b)=>a.y-b.y);
+      const gap=17;
+      for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
+      for(let i=lbs.length-1;i>=0;i--){if(lbs[i].y>bottom-6)lbs[i].y=bottom-6;if(i>0&&lbs[i].y-lbs[i-1].y<gap)lbs[i-1].y=lbs[i].y-gap;}
+      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      lbs.forEach(l=>{
+        const tx=Math.min(l.x+12,right-82);
+        const tw=c.measureText(l.name.substring(0,12)).width;
+        c.fillStyle="rgba(14,17,26,0.8)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
 };
@@ -471,7 +478,7 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const CC=["#FF6B6B","#4ECDC4","#FFD93D","#6BCB77","#4D96FF","#FF9FF3","#FFA447","#C77DFF","#45B7D1","#F06595"];
 const DASHES=[
   {borderDash:[],label:"solid"},
   {borderDash:[5,5],label:"dashed"},
@@ -584,28 +591,35 @@ function renderAll(){
 
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
-  const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
+  const ds=D.standings.map((s,i)=>{const col=CC[i%CC.length];return{label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
+    borderColor:col,backgroundColor:col+"22",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
-    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+    pointBackgroundColor:col,pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2};});
 
   // Plugin to render team names on chart
   const namePlugin={
     afterDatasetsDraw(chart){
       const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      const lbs=[];
       D.standings.forEach((s,i)=>{
         const ds=chart.data.datasets[i];
         const meta=chart.getDatasetMeta(i);
         if(!meta.hidden&&ds.data.length>0){
-          const lastIdx=ds.data.length-1;
-          const lastPt=meta.data[lastIdx];
-          if(lastPt){
-            c.fillStyle="#ffffff";c.font="bold 12px 'Inter Tight'";
-            c.textAlign="left";c.textBaseline="middle";
-            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
-          }
+          const lastPt=meta.data[ds.data.length-1];
+          if(lastPt) lbs.push({name:s.name,color:ds.borderColor,x:lastPt.x,y:lastPt.y});
         }
+      });
+      lbs.sort((a,b)=>a.y-b.y);
+      const gap=17;
+      for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
+      for(let i=lbs.length-1;i>=0;i--){if(lbs[i].y>bottom-6)lbs[i].y=bottom-6;if(i>0&&lbs[i].y-lbs[i-1].y<gap)lbs[i-1].y=lbs[i].y-gap;}
+      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      lbs.forEach(l=>{
+        const tx=Math.min(l.x+12,right-82);
+        const tw=c.measureText(l.name.substring(0,12)).width;
+        c.fillStyle="rgba(14,17,26,0.8)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
 };
@@ -669,7 +683,7 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const CC=["#FF6B6B","#4ECDC4","#FFD93D","#6BCB77","#4D96FF","#FF9FF3","#FFA447","#C77DFF","#45B7D1","#F06595"];
 const DASHES=[
   {borderDash:[],label:"solid"},
   {borderDash:[5,5],label:"dashed"},
@@ -782,28 +796,35 @@ function renderAll(){
 
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
-  const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
+  const ds=D.standings.map((s,i)=>{const col=CC[i%CC.length];return{label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
+    borderColor:col,backgroundColor:col+"22",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
-    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+    pointBackgroundColor:col,pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2};});
 
   // Plugin to render team names on chart
   const namePlugin={
     afterDatasetsDraw(chart){
       const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      const lbs=[];
       D.standings.forEach((s,i)=>{
         const ds=chart.data.datasets[i];
         const meta=chart.getDatasetMeta(i);
         if(!meta.hidden&&ds.data.length>0){
-          const lastIdx=ds.data.length-1;
-          const lastPt=meta.data[lastIdx];
-          if(lastPt){
-            c.fillStyle="#ffffff";c.font="bold 12px 'Inter Tight'";
-            c.textAlign="left";c.textBaseline="middle";
-            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
-          }
+          const lastPt=meta.data[ds.data.length-1];
+          if(lastPt) lbs.push({name:s.name,color:ds.borderColor,x:lastPt.x,y:lastPt.y});
         }
+      });
+      lbs.sort((a,b)=>a.y-b.y);
+      const gap=17;
+      for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
+      for(let i=lbs.length-1;i>=0;i--){if(lbs[i].y>bottom-6)lbs[i].y=bottom-6;if(i>0&&lbs[i].y-lbs[i-1].y<gap)lbs[i-1].y=lbs[i].y-gap;}
+      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      lbs.forEach(l=>{
+        const tx=Math.min(l.x+12,right-82);
+        const tw=c.measureText(l.name.substring(0,12)).width;
+        c.fillStyle="rgba(14,17,26,0.8)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
 };
@@ -867,7 +888,7 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const CC=["#FF6B6B","#4ECDC4","#FFD93D","#6BCB77","#4D96FF","#FF9FF3","#FFA447","#C77DFF","#45B7D1","#F06595"];
 const DASHES=[
   {borderDash:[],label:"solid"},
   {borderDash:[5,5],label:"dashed"},
@@ -980,28 +1001,35 @@ function renderAll(){
 
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
-  const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
+  const ds=D.standings.map((s,i)=>{const col=CC[i%CC.length];return{label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
+    borderColor:col,backgroundColor:col+"22",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
-    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+    pointBackgroundColor:col,pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2};});
 
   // Plugin to render team names on chart
   const namePlugin={
     afterDatasetsDraw(chart){
       const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      const lbs=[];
       D.standings.forEach((s,i)=>{
         const ds=chart.data.datasets[i];
         const meta=chart.getDatasetMeta(i);
         if(!meta.hidden&&ds.data.length>0){
-          const lastIdx=ds.data.length-1;
-          const lastPt=meta.data[lastIdx];
-          if(lastPt){
-            c.fillStyle="#ffffff";c.font="bold 12px 'Inter Tight'";
-            c.textAlign="left";c.textBaseline="middle";
-            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
-          }
+          const lastPt=meta.data[ds.data.length-1];
+          if(lastPt) lbs.push({name:s.name,color:ds.borderColor,x:lastPt.x,y:lastPt.y});
         }
+      });
+      lbs.sort((a,b)=>a.y-b.y);
+      const gap=17;
+      for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
+      for(let i=lbs.length-1;i>=0;i--){if(lbs[i].y>bottom-6)lbs[i].y=bottom-6;if(i>0&&lbs[i].y-lbs[i-1].y<gap)lbs[i-1].y=lbs[i].y-gap;}
+      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      lbs.forEach(l=>{
+        const tx=Math.min(l.x+12,right-82);
+        const tw=c.measureText(l.name.substring(0,12)).width;
+        c.fillStyle="rgba(14,17,26,0.8)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
 };
@@ -1065,7 +1093,7 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const CC=["#FF6B6B","#4ECDC4","#FFD93D","#6BCB77","#4D96FF","#FF9FF3","#FFA447","#C77DFF","#45B7D1","#F06595"];
 const DASHES=[
   {borderDash:[],label:"solid"},
   {borderDash:[5,5],label:"dashed"},
@@ -1178,28 +1206,35 @@ function renderAll(){
 
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
-  const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
+  const ds=D.standings.map((s,i)=>{const col=CC[i%CC.length];return{label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
+    borderColor:col,backgroundColor:col+"22",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
-    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+    pointBackgroundColor:col,pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2};});
 
   // Plugin to render team names on chart
   const namePlugin={
     afterDatasetsDraw(chart){
       const{ctx:c,chartArea:{right,top,bottom}}=chart;
+      const lbs=[];
       D.standings.forEach((s,i)=>{
         const ds=chart.data.datasets[i];
         const meta=chart.getDatasetMeta(i);
         if(!meta.hidden&&ds.data.length>0){
-          const lastIdx=ds.data.length-1;
-          const lastPt=meta.data[lastIdx];
-          if(lastPt){
-            c.fillStyle="#ffffff";c.font="bold 12px 'Inter Tight'";
-            c.textAlign="left";c.textBaseline="middle";
-            c.fillText(s.name.substring(0,12),Math.min(lastPt.x+12,right-80),lastPt.y);
-          }
+          const lastPt=meta.data[ds.data.length-1];
+          if(lastPt) lbs.push({name:s.name,color:ds.borderColor,x:lastPt.x,y:lastPt.y});
         }
+      });
+      lbs.sort((a,b)=>a.y-b.y);
+      const gap=17;
+      for(let i=1;i<lbs.length;i++)if(lbs[i].y-lbs[i-1].y<gap)lbs[i].y=lbs[i-1].y+gap;
+      for(let i=lbs.length-1;i>=0;i--){if(lbs[i].y>bottom-6)lbs[i].y=bottom-6;if(i>0&&lbs[i].y-lbs[i-1].y<gap)lbs[i-1].y=lbs[i].y-gap;}
+      c.font="bold 11px 'Inter Tight'";c.textAlign="left";c.textBaseline="middle";
+      lbs.forEach(l=>{
+        const tx=Math.min(l.x+12,right-82);
+        const tw=c.measureText(l.name.substring(0,12)).width;
+        c.fillStyle="rgba(14,17,26,0.8)";c.fillRect(tx-2,l.y-8,tw+8,16);
+        c.fillStyle=l.color;c.fillText(l.name.substring(0,12),tx,l.y);
       });
   }
 };
@@ -1263,7 +1298,7 @@ function initShapes(){
   for(let i=0;i<15;i++)setTimeout(make,i*200);
 }
 
-const CC=["#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919","#FF1919"];
+const CC=["#FF6B6B","#4ECDC4","#FFD93D","#6BCB77","#4D96FF","#FF9FF3","#FFA447","#C77DFF","#45B7D1","#F06595"];
 const DASHES=[
   {borderDash:[],label:"solid"},
   {borderDash:[5,5],label:"dashed"},
@@ -1376,11 +1411,11 @@ function renderAll(){
 
   // Chart
   const ctx=document.getElementById("chart").getContext("2d");
-  const ds=D.standings.map((s,i)=>({label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
-    borderColor:"#FF1919",backgroundColor:"#FF1919"+"10",borderWidth:2.5,
+  const ds=D.standings.map((s,i)=>{const col=CC[i%CC.length];return{label:s.name,data:(D.matchPts.cumulative[s.name]||[]).slice(),
+    borderColor:col,backgroundColor:col+"22",borderWidth:2.5,
     pointRadius:5,pointHoverRadius:9,tension:.4,fill:false,spanGaps:true,
-    pointBackgroundColor:"#FF1919",pointBorderColor:"#14171F",pointBorderWidth:2,
-    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2}));
+    pointBackgroundColor:col,pointBorderColor:"#14171F",pointBorderWidth:2,
+    pointHoverBorderColor:"#fff",pointHoverBorderWidth:2};});
 
   // Plugin to render team names on chart
   const namePlugin={
