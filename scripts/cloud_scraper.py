@@ -100,7 +100,21 @@ def scrape():
             t1 = f.get("HomeTeamShortName", "?")
             t2 = f.get("AwayTeamShortName", "?")
             match_no = f.get("Gameday") or gd
+
+        # Count completed matches per IPL team (for GIH calculation)
+        ipl_team_matches = {}
+        for fx in fix_list:
+            if not isinstance(fx, dict) or not fx.get("HomeTeamShortName"):
+                continue
+            ts = _parse_ts(fx)
+            if fx.get("IsLocked") == 1 or (ts > 0 and ts <= now_ts):
+                for side in ("HomeTeamShortName", "AwayTeamShortName"):
+                    t_name = fx.get(side, "")
+                    if t_name:
+                        ipl_team_matches[t_name] = ipl_team_matches.get(t_name, 0) + 1
+        print(f"[SCRAPE] IPL team matches: {ipl_team_matches}")
     except Exception as e:
+        ipl_team_matches = {}
         print(f"[SCRAPE] tour-fixtures failed: {e}")
 
     print(f"[SCRAPE] Gameday: {gd}, Next: {t1} vs {t2} (Match {match_no})")
@@ -135,7 +149,7 @@ def scrape():
     standings = sorted(standings, key=lambda x: x["rank"])
     next_match = {"no": match_no, "teams": [t1, t2], "time": ""}
     print(f"[SCRAPE] Got {len(standings)} teams")
-    return standings, next_match
+    return standings, next_match, ipl_team_matches
 
 
 # ── Update HTML ───────────────────────────────────────────────────────
@@ -147,7 +161,7 @@ def load_history():
 def save_history(h):
     HIST_FILE.write_text(json.dumps(h, indent=2, ensure_ascii=False), encoding="utf-8")
 
-def update_html(standings, next_match):
+def update_html(standings, next_match, ipl_team_matches=None):
     if not HTML_FILE.exists():
         print(f"[!] HTML not found: {HTML_FILE}")
         return
@@ -173,6 +187,9 @@ def update_html(standings, next_match):
         else:
             hist["teams"][s["name"]].append(s["pts"])
 
+    # Persist iplTeamMatches in history so future runs can fall back to it
+    if ipl_team_matches:
+        hist["iplTeamMatches"] = ipl_team_matches
     save_history(hist)
 
     standings_js = json.dumps(
@@ -181,6 +198,7 @@ def update_html(standings, next_match):
     )
     cum_labels = json.dumps(hist["labels"])
     cum_data_js = json.dumps({n: p for n, p in hist["teams"].items()}, ensure_ascii=False)
+    itm_js = json.dumps(ipl_team_matches or hist.get("iplTeamMatches", {}), ensure_ascii=False)
 
     t = next_match.get("teams", ["?", "?"])
     new_data_block = f"""<!-- DATA_START -->
@@ -196,6 +214,7 @@ const D = {{
     perMatch: {{}},
     cumulative: {cum_data_js}
   }},
+  iplTeamMatches: {itm_js},
   teams: TEAMS_PLACEHOLDER
 }};
 </script>
@@ -229,8 +248,8 @@ if __name__ == "__main__":
     print(f"  {datetime.now().strftime('%d %b %Y  %H:%M UTC')}")
     print("=" * 50)
 
-    standings, next_match = scrape()
-    update_html(standings, next_match)
+    standings, next_match, ipl_team_matches = scrape()
+    update_html(standings, next_match, ipl_team_matches)
 
     print("\nStandings:")
     for s in standings:
